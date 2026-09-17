@@ -1,0 +1,8 @@
+Metti qui dentro:
+
+  lirn.gts            il file stand del sector file Aurora (ID;ICAO;LAT;LON;tipo;)
+  stands.LIRN.json    gli attributi operativi degli stand
+
+Il secondo lo genera l'app stessa: avviala, poi chiama una volta
+  POST http://127.0.0.1:5057/api/stands/template
+e ti scrive qui un file precompilato con tutti gli stand trovati, da rifinire a mano.

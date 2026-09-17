@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RFO Gate Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">RFO</span>
+    <div>
+      <h1>Gate Manager</h1>
+      <p id="subtitle">—</p>
+    </div>
+  </div>
+  <div class="chips" id="chips"></div>
+</header>
+
+<main>
+  <section class="panel selected-panel">
+    <div class="panel-head">
+      <h2>Traffico selezionato in Aurora</h2>
+      <label class="toggle">
+        <input type="checkbox" id="autoSelected" checked>
+        <span>Segui la selezione</span>
+      </label>
+    </div>
+    <div id="selectedBox" class="selected-box empty">
+      <p>Seleziona un aereo in Aurora: qui comparirà lo stand suggerito.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Piano stand</h2>
+      <div class="actions">
+        <input type="search" id="filter" placeholder="Filtra callsign, stand, tipo…" autocomplete="off">
+        <button id="btnBooking" class="btn">Ricarica prenotazioni</button>
+        <button id="btnStands" class="btn">Ricarica stand</button>
+        <button id="btnPublish" class="btn btn-primary">Pubblica piano</button>
+      </div>
+    </div>
+    <div id="warnings" class="warnings" hidden></div>
+    <div class="table-wrap">
+      <table id="planTable">
+        <thead>
+          <tr>
+            <th>Ora</th>
+            <th>Callsign</th>
+            <th>Tipo</th>
+            <th>Rotta</th>
+            <th>Stato</th>
+            <th>Stand</th>
+            <th>Motivo</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="planBody">
+          <tr><td colspan="8" class="muted">Caricamento…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Occupazione del piazzale</h2>
+      <p class="muted" id="ganttRange">—</p>
+    </div>
+    <div class="gantt-wrap">
+      <div id="gantt" class="gantt"></div>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

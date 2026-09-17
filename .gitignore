@@ -1,0 +1,9 @@
+bin/
+obj/
+artifacts/
+node_modules/
+*.user
+secrets/*.json
+!secrets/*.example.json
+state.local.json
+dist/
