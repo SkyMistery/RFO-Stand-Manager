@@ -205,9 +205,11 @@ tbody tr:hover { background: var(--panel-2); }
 .badge.live { border-color: var(--ok); color: var(--ok); }
 .badge.pin { border-color: var(--pin); color: var(--pin); }
 .badge.conflict { border-color: var(--bad); color: var(--bad); }
+.badge.oversize { border-color: var(--warn); color: var(--warn); }
 .badge.booked { border-color: var(--accent); color: var(--accent); }
 
 tr.conflict td { background: color-mix(in srgb, var(--bad) 12%, transparent); }
+tr.oversize td { background: color-mix(in srgb, var(--warn) 12%, transparent); }
 
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
@@ -264,6 +266,7 @@ tr.conflict td { background: color-mix(in srgb, var(--bad) 12%, transparent); }
   cursor: default;
 }
 .gantt-bar.conflict { background: var(--bad); color: #fff; }
+.gantt-bar.oversize { background: var(--warn); color: #07101c; }
 .gantt-bar.pinned { background: var(--pin); color: #fff; }
 
 .gantt-axis {

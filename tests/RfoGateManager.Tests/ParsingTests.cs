@@ -235,6 +235,44 @@ public class RotationBuilderTests
     }
 
     [Fact]
+    public void La_rotazione_si_riconosce_dal_VID_quando_il_callsign_cambia()
+    {
+        // Nel booking dell'evento il callsign cambia quasi sempre fra andata e ritorno,
+        // ma il pilota che ha prenotato e' lo stesso.
+        var arr = Arrival("LHX1876", 15) with { Vid = 782237 };
+        var dep = Departure("LHX9999", 65) with { Vid = 782237 };
+
+        var r = Assert.Single(RotationBuilder.Build([arr, dep], "LIRN", Opt, T0));
+
+        Assert.Equal("LHX9999", r.Outbound!.Callsign);
+        Assert.Equal(T0.AddMinutes(65), r.To);
+    }
+
+    [Fact]
+    public void Il_VID_zero_o_assente_non_accoppia_voli_estranei()
+    {
+        // Nei dati reali molte prenotazioni hanno booked_by 0 o nullo: non identificano nessuno.
+        foreach (int? vid in new int?[] { 0, null })
+        {
+            var arr = Arrival("RYR354V", 15) with { Vid = vid };
+            var dep = Departure("DAL233", 65) with { Vid = vid };
+
+            var requests = RotationBuilder.Build([arr, dep], "LIRN", Opt, T0);
+
+            Assert.Equal(2, requests.Count);
+        }
+    }
+
+    [Fact]
+    public void Una_partenza_precedente_all_arrivo_non_e_una_rotazione_nemmeno_con_lo_stesso_VID()
+    {
+        var arr = Arrival("EJU63AY", 200) with { Vid = 250140 };
+        var dep = Departure("EJU4127", 5) with { Vid = 250140 };
+
+        Assert.Equal(2, RotationBuilder.Build([arr, dep], "LIRN", Opt, T0).Count);
+    }
+
+    [Fact]
     public void I_voli_di_altri_aeroporti_vengono_ignorati()
     {
         var legs = new[]

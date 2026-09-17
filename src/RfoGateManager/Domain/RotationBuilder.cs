@@ -31,12 +31,18 @@ public static class RotationBuilder
         {
             var onBlocks = arr.Eta ?? now;
 
-            // La ripartenza dello stesso aereo: prima per callsign, poi per marche.
-            var outbound = departures.FirstOrDefault(d =>
-                !used.Contains(d) &&
-                SameAircraft(arr, d) &&
-                (d.Etd ?? now) >= onBlocks.AddMinutes(-5) &&
-                (d.Etd ?? now) - onBlocks <= window);
+            // La ripartenza dello stesso aereo, scegliendo il segnale piu' affidabile
+            // fra quelli disponibili e, a parita' di segnale, la partenza piu' vicina.
+            var outbound = departures
+                .Where(d => !used.Contains(d)
+                            && (d.Etd ?? now) >= onBlocks.AddMinutes(-5)
+                            && (d.Etd ?? now) - onBlocks <= window)
+                .Select(d => (Leg: d, Strength: MatchStrength(arr, d)))
+                .Where(x => x.Strength > 0)
+                .OrderByDescending(x => x.Strength)
+                .ThenBy(x => x.Leg.Etd ?? now)
+                .Select(x => x.Leg)
+                .FirstOrDefault();
 
             DateTimeOffset offBlocks;
             if (outbound is not null)
@@ -66,13 +72,55 @@ public static class RotationBuilder
         return requests.OrderBy(r => r.From).ThenBy(r => r.Callsign, StringComparer.Ordinal).ToList();
     }
 
-    private static bool SameAircraft(FlightLeg arr, FlightLeg dep)
+    /// <summary>
+    /// Quanto e' credibile che queste due tratte siano lo stesso aereo. Zero significa
+    /// nessun legame; piu' alto e' il valore, piu' forte e' la prova.
+    ///
+    /// Lo stand prenotato pesa piu' del callsign perche' nel booking di un evento il
+    /// callsign cambia quasi sempre fra andata e ritorno (AAL180 arriva, AAL781 riparte),
+    /// mentre il sistema assegna a quella coppia lo stesso gate: e' il sistema stesso a
+    /// dirci che e' un turnaround. Il VID viene per ultimo perche' spesso e' nullo o zero,
+    /// e capita che nella stessa coppia i due voli risultino prenotati da piloti diversi.
+    /// </summary>
+    private static int MatchStrength(FlightLeg arr, FlightLeg dep)
     {
+        // Le marche sono l'unica identificazione certa dell'aeromobile.
         if (!string.IsNullOrWhiteSpace(arr.Registration) &&
             string.Equals(arr.Registration, dep.Registration, StringComparison.OrdinalIgnoreCase))
+            return 4;
+
+        if (!string.IsNullOrWhiteSpace(arr.BookedStand) &&
+            string.Equals(arr.BookedStand, dep.BookedStand, StringComparison.OrdinalIgnoreCase) &&
+            SameType(arr, dep))
+            return 3;
+
+        if (string.Equals(arr.Callsign, dep.Callsign, StringComparison.OrdinalIgnoreCase))
+            return 2;
+
+        if (arr.Vid is > 0 && arr.Vid == dep.Vid)
+            return 1;
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Stesso tipo di aeromobile. Serve a non scambiare per turnaround due aerei diversi
+    /// che si danno il cambio sullo stesso stand.
+    ///
+    /// Se uno dei due tipi non e' riconosciuto vince lo stand: nelle prenotazioni capita di
+    /// trovare refusi (un B738 ripartito come "B378") e rifiutare l'abbinamento per quello
+    /// produrrebbe un conflitto inventato al posto di una rotazione reale.
+    /// </summary>
+    private static bool SameType(FlightLeg a, FlightLeg b)
+    {
+        if (string.IsNullOrWhiteSpace(a.AircraftType) || string.IsNullOrWhiteSpace(b.AircraftType))
             return true;
 
-        return string.Equals(arr.Callsign, dep.Callsign, StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(a.AircraftType, b.AircraftType, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return AircraftCatalog.DimensionsOf(a.AircraftType) is null
+            || AircraftCatalog.DimensionsOf(b.AircraftType) is null;
     }
 
     private static StandRequest MakeRequest(

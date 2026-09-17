@@ -306,18 +306,72 @@ public class StandAllocatorTests
     }
 
     [Fact]
-    public void Il_motivo_del_rifiuto_dice_quale_misura_ha_sforato()
+    public void Lo_stand_prenotato_vince_sulle_misure_e_viene_assegnato_lo_stesso()
     {
+        // Caso vero del booking RFO: un B787-8 prenotato sullo stand 12, che e' 36x45 m.
+        // La prenotazione comanda, ma la riga deve gridarlo.
         var allocator = new StandAllocator(
-            [Stand("23", SizeCategory.C, maxSpan: 32, maxLength: 37)], Options());
+            [Stand("12", SizeCategory.C, maxSpan: 36, maxLength: 45), Stand("11", SizeCategory.E, maxSpan: 61, maxLength: 60)],
+            Options());
 
         var result = allocator.Allocate(
-            [Request("AZA100", 0, 60, type: "A320", span: 35.8, length: 37.57, booked: "23")], T0);
+            [Request("ACA883", 0, 90, type: "B788", span: 60.12, length: 56.72, booked: "12")], T0);
 
         var a = Assert.Single(result.Assignments);
-        Assert.True(a.Conflict);
+        Assert.Equal("12", a.StandId);
+        Assert.True(a.Oversize);
+        Assert.False(a.Conflict);
+        Assert.Contains("ATTENZIONE", a.Reason);
         Assert.Contains("apertura alare", a.Reason);
-        Assert.Contains("35,8", a.Reason.Replace('.', ','));
+    }
+
+    [Fact]
+    public void Fuori_misura_e_sovrapposizione_sono_due_cose_diverse()
+    {
+        var allocator = new StandAllocator(
+            [Stand("12", SizeCategory.C, maxSpan: 36, maxLength: 45)], Options());
+
+        var result = allocator.Allocate([
+            Request("AZA100", 0, 60, type: "A320", span: 35.8, length: 37.57, booked: "12"),
+            Request("ACA883", 30, 60, type: "B788", span: 60.12, length: 56.72, booked: "12"),
+        ], T0);
+
+        var big = result.Assignments.Single(a => a.Callsign == "ACA883");
+        Assert.Equal("12", big.StandId);
+        Assert.True(big.Oversize);   // non ci sta
+        Assert.True(big.Conflict);   // e in piu' si sovrappone a un altro volo
+    }
+
+    [Fact]
+    public void Anche_un_pin_manuale_vince_sulle_misure()
+    {
+        var allocator = new StandAllocator(
+            [Stand("61", SizeCategory.B, maxSpan: 25, maxLength: 31), Stand("11", SizeCategory.E, maxSpan: 61, maxLength: 60)],
+            Options());
+        var req = Request("AZA100", 0, 60, type: "B788", span: 60.12, length: 56.72);
+
+        var result = allocator.Allocate([req], T0,
+            pinned: new Dictionary<string, string> { [req.Key] = "61" });
+
+        var a = Assert.Single(result.Assignments);
+        Assert.Equal("61", a.StandId);
+        Assert.True(a.Oversize);
+        Assert.True(a.Manual);
+    }
+
+    [Fact]
+    public void La_scelta_automatica_invece_le_misure_le_rispetta()
+    {
+        // Senza uno stand gia' deciso non si forza nulla: se non ci sta, non ci va.
+        var allocator = new StandAllocator(
+            [Stand("12", SizeCategory.C, maxSpan: 36, maxLength: 45)], Options());
+
+        var result = allocator.Allocate(
+            [Request("ACA883", 0, 90, type: "B788", span: 60.12, length: 56.72)], T0);
+
+        var a = Assert.Single(result.Assignments);
+        Assert.Null(a.StandId);
+        Assert.False(a.Oversize);
     }
 
     [Fact]

@@ -95,6 +95,17 @@ destinazione diviso la ground speed, più il rullaggio. Per un volo non ancora p
 partenza prevista più il tempo di volo del piano. Le prenotazioni danno l'orario di chi non è
 ancora online.
 
+**Come si riconosce una rotazione.** Il segnale migliore non è il callsign: nel booking di un
+evento cambia quasi sempre fra andata e ritorno (AAL180 arriva, AAL781 riparte). È **lo stand
+prenotato**: il sistema assegna alla coppia lo stesso gate, quindi sta dicendo che è un
+turnaround. I segnali sono provati in ordine di affidabilità — marche, stesso stand con lo
+stesso tipo, stesso callsign, stesso VID — e vince il più forte. Sui dati veri dell'RFO questo
+porta le rotazioni riconosciute da 20 a 68, e i conflitti da 68 a 5.
+
+Il controllo sul tipo si ammorbidisce quando uno dei due non è in catalogo: nelle prenotazioni
+capitano refusi (un B738 ripartito come "B378") e rifiutare l'abbinamento per quello produrrebbe
+un conflitto inventato al posto di una rotazione reale.
+
 **L'ordine delle decisioni.** Prima si posa quello che è già deciso — assegnazioni manuali,
 poi la posizione reale letta da Aurora, poi le prenotazioni — perché sono vincoli. Il resto
 viene assegnato in ordine di arrivo scegliendo, fra gli stand compatibili e liberi, quello con
@@ -102,8 +113,21 @@ il punteggio migliore: compagnia di casa, conferma del piano precedente, misura 
 sprecare uno stand grande, pontile per i passeggeri, e gli stand MARS tenuti per ultimi perché
 occuparne uno ne brucia altri.
 
+**Lo stand già deciso vince sulle misure.** Se la prenotazione dice stand 12, l'aereo va sullo
+stand 12 anche se non ci sta: la riga diventa ambra con l'etichetta *fuori misura* e il motivo
+spiega quale limite è stato sforato. Vale anche per le assegnazioni fatte a mano. La scelta
+automatica invece le misure le rispetta: quando è il programma a decidere, non forza nulla.
+
+Ambra e rosso vogliono dire cose diverse: **ambra** è un aereo più grande dello stand, accettato
+per decisione altrui; **rosso** è un conflitto vero, due aerei sullo stesso stand nella stessa
+finestra, e va risolto.
+
 **Quando non trova niente, lo dice.** Nessun volo sparisce in silenzio: la riga riporta quanti
 stand erano troppo piccoli, quanti occupati, quanti bloccati da un MARS adiacente.
+
+**Parametri regolabili durante l'evento** senza ricompilare, via `GET`/`POST /api/options`:
+margine fra un occupante e il successivo (5 minuti, quanto basta per come il booking impacchetta
+gli slot), sosta predefinita, rullaggio, finestra di rotazione.
 
 ---
 
@@ -129,7 +153,7 @@ per tutti. Senza URL l'app lavora da sola e salva lo stato in `state.local.json`
 
 | Sorgente | Cosa dà | Note |
 |---|---|---|
-| `booking.it.ivao.aero/api/flights/{data}` | prenotazioni dell'evento | serve la `x-key` |
+| `booking.it.ivao.aero/api/flights` | prenotazioni dell'evento | header `x-api-key`, nessuna data nel path |
 | `api.ivao.aero/v2/tracker/whazzup` | tutti i voli online, posizione e distanza | pubblico, nessuna chiave, ~15 s |
 | Aurora TCP `127.0.0.1:1130` | selezione, posizione reale, assegnazione | va abilitato in Aurora |
 

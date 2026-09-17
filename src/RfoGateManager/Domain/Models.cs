@@ -121,7 +121,15 @@ public sealed record Assignment
     /// <summary>Perché è stato scelto questo stand, o perché non se n'è trovato nessuno.</summary>
     public string Reason { get; init; } = "";
 
+    /// <summary>Due aerei sullo stesso stand nella stessa finestra: va risolto.</summary>
     public bool Conflict { get; init; }
+
+    /// <summary>
+    /// L'aereo non ci sta per misure, ma lo stand era gia' stato deciso (prenotazione o
+    /// scelta del controllore) e quella decisione vince. Da segnalare, non da bloccare.
+    /// </summary>
+    public bool Oversize { get; init; }
+
     public bool PushedToAurora { get; init; }
     public bool Manual { get; init; }
 }
@@ -134,8 +142,12 @@ public sealed record AllocationOptions
     /// <summary>Minuti fra off-blocks e decollo.</summary>
     public int TaxiOutMinutes { get; init; } = 12;
 
-    /// <summary>Margine fra un occupante e il successivo sullo stesso stand.</summary>
-    public int BufferMinutes { get; init; } = 10;
+    /// <summary>
+    /// Margine fra un occupante e il successivo sullo stesso stand. Cinque minuti perche'
+    /// e' cosi' che il booking dell'evento impacchetta gli slot: con dieci, una partenza
+    /// alle 13:00 e un arrivo alle 13:05 risultavano in conflitto senza esserlo davvero.
+    /// </summary>
+    public int BufferMinutes { get; init; } = 5;
 
     /// <summary>Se un volo è solo in partenza, da quanto prima dell'EOBT occupa lo stand.</summary>
     public int DepartureOccupancyMinutes { get; init; } = 60;

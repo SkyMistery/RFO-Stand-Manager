@@ -206,12 +206,15 @@ function renderPlan() {
       a.actualStand ? `<span class="badge">a terra ${esc(a.actualStand)}</span>` : '',
       a.hasRotation ? '<span class="badge">rotazione</span>' : '',
       a.conflict ? '<span class="badge conflict">conflitto</span>' : '',
+      a.oversize ? '<span class="badge oversize">fuori misura</span>' : '',
       a.distanceNm ? `<span class="badge">${Math.round(a.distanceNm)} NM</span>` : '',
     ].filter(Boolean).join(' ');
 
     const route = `${esc(a.origin || '····')} → ${esc(a.destination || '····')}`;
 
-    return `<tr class="${a.conflict ? 'conflict' : ''}">
+    const rowClass = a.conflict ? 'conflict' : a.oversize ? 'oversize' : '';
+
+    return `<tr class="${rowClass}">
       <td class="cs">${hhmm(a.from)}–${hhmm(a.to)}</td>
       <td class="cs">${esc(a.callsign)}</td>
       <td>${esc(a.aircraft || '—')} <span class="muted">${esc(a.size || '')}</span></td>
@@ -285,7 +288,7 @@ function renderGantt() {
       const bars = (byStand.get(s.id) ?? []).map((a) => {
         const left = Math.max(0, pct(a.from));
         const right = Math.min(100, pct(a.to));
-        const cls = a.conflict ? 'conflict' : a.pinned ? 'pinned' : '';
+        const cls = a.conflict ? 'conflict' : a.oversize ? 'oversize' : a.pinned ? 'pinned' : '';
         return `<div class="gantt-bar ${cls}" style="left:${left}%;width:${Math.max(right - left, 1.2)}%"
                      title="${esc(a.callsign)} ${hhmm(a.from)}–${hhmm(a.to)}Z — ${esc(a.reason)}">${esc(a.callsign)}</div>`;
       }).join('');

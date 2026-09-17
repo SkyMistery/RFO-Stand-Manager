@@ -126,7 +126,9 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
             StandId = stand.Id,
             From = req.From,
             To = req.To,
-            Conflict = !free || !fits,
+            // Lo stand gia' deciso vince sulle misure: si assegna comunque e si segnala.
+            Conflict = !free,
+            Oversize = !fits,
             Manual = Pick(pinned, req.Key) is not null,
             Reason = BuildForcedReason(req, pinned, free, fits, clashKey, stand),
         };
@@ -326,15 +328,18 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
                    : req.ActualStand is not null ? "Posizione reale letta da Aurora"
                    : "Da prenotazione";
 
+        var parts = new List<string> { $"{origin} su {stand.Id}" };
+
         if (!fits)
-            return $"{origin} su {stand.Id}, ma {req.AircraftType} non ci sta: {Oversize(stand, req)}.";
+            parts.Add($"ATTENZIONE: {req.AircraftType} non ci sta ({Oversize(stand, req)}). " +
+                      "Assegnato lo stesso perché lo stand era già deciso: verificare gli stand adiacenti");
 
         if (!free)
-            return clashKey == MarsClash
-                ? $"{origin} su {stand.Id}, ma uno stand MARS adiacente è occupato nella stessa finestra."
-                : $"{origin} su {stand.Id}, ma si sovrappone a {clashKey}.";
+            parts.Add(clashKey == MarsClash
+                ? "uno stand MARS adiacente è occupato nella stessa finestra"
+                : $"si sovrappone a {clashKey}");
 
-        return $"{origin} su {stand.Id}.";
+        return string.Join(" — ", parts) + ".";
     }
 
     /// <summary>Dice quale limite e' stato sforato, per scriverlo nel motivo.</summary>

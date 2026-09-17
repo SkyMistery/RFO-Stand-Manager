@@ -29,15 +29,18 @@ public sealed class BookingClient(HttpClient http, AppConfig config, ILogger<Boo
     public static class FieldNames
     {
         public static readonly string[] Callsign = ["callsign", "call_sign", "flightCallsign", "cs"];
-        public static readonly string[] Departure = ["departure", "departureId", "departureIcao", "dep", "origin", "from", "adep"];
-        public static readonly string[] Arrival = ["arrival", "arrivalId", "arrivalIcao", "arr", "destination", "to", "ades"];
-        public static readonly string[] Aircraft = ["aircraft", "aircraftId", "aircraftType", "actype", "acType", "equipment", "type"];
+        public static readonly string[] Departure = ["origin_icao", "departure", "departureId", "departureIcao", "dep", "origin", "from", "adep"];
+        public static readonly string[] Arrival = ["destination_icao", "arrival", "arrivalId", "arrivalIcao", "arr", "destination", "to", "ades"];
+        public static readonly string[] Aircraft = ["aircraft_icao", "aircraft", "aircraftId", "aircraftType", "actype", "acType", "equipment", "type"];
         public static readonly string[] Registration = ["registration", "reg", "tailNumber", "aircraftRegistration"];
         public static readonly string[] Eobt = ["eobt", "std", "departureTime", "depTime", "timeDeparture", "slot", "slotTime", "time"];
-        public static readonly string[] Eta = ["eta", "sta", "arrivalTime", "arrTime", "timeArrival"];
-        public static readonly string[] Stand = ["stand", "gate", "parking", "standId", "gateId", "bay"];
-        public static readonly string[] Vid = ["vid", "userId", "user_id", "memberId"];
+        public static readonly string[] Eta = ["eat", "eta", "sta", "arrivalTime", "arrTime", "timeArrival"];
+        public static readonly string[] Stand = ["gate", "stand", "parking", "standId", "gateId", "bay"];
+        public static readonly string[] Vid = ["booked_by", "vid", "userId", "user_id", "memberId"];
         public static readonly string[] Date = ["date", "eventDate", "day"];
+
+        /// <summary>Valori che significano "stand non ancora deciso".</summary>
+        public static readonly string[] NoStand = ["TBD", "TBA", "N/A", "-", "NIL", "NONE"];
 
         /// <summary>Chiavi sotto cui può stare l'array dei voli se la risposta è un oggetto.</summary>
         public static readonly string[] Collections = ["flights", "data", "result", "results", "items", "bookings", "rows"];
@@ -45,7 +48,9 @@ public sealed class BookingClient(HttpClient http, AppConfig config, ILogger<Boo
 
     public async Task<BookingFetchResult> FetchAsync(CancellationToken ct = default)
     {
-        var url = $"{config.BookingBaseUrl.TrimEnd('/')}/flights/{config.EventDate}";
+        // La rotta non prende la data: l'endpoint restituisce le prenotazioni dell'evento
+        // in corso. Con la data in fondo Slim risponde 404.
+        var url = $"{config.BookingBaseUrl.TrimEnd('/')}/flights";
 
         if (!config.HasBookingKey)
         {
@@ -53,14 +58,14 @@ public sealed class BookingClient(HttpClient http, AppConfig config, ILogger<Boo
             {
                 Success = false,
                 RequestUrl = url,
-                Error = "x-key non configurata. Inseriscila in secrets/booking.json.",
+                Error = "Chiave non configurata. Inseriscila in secrets/booking.json (campo bookingXKey).",
             };
         }
 
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            req.Headers.TryAddWithoutValidation("x-key", config.BookingXKey);
+            req.Headers.TryAddWithoutValidation("x-api-key", config.BookingXKey);
             req.Headers.TryAddWithoutValidation("Accept", "application/json");
 
             using var res = await http.SendAsync(req, ct);
@@ -168,10 +173,18 @@ public sealed class BookingClient(HttpClient http, AppConfig config, ILogger<Boo
             Kind = isArrival && isDeparture ? LegKind.Turnaround
                  : isArrival ? LegKind.Arrival
                  : LegKind.Departure,
-            BookedStand = Str(o, FieldNames.Stand),
+            BookedStand = Stand(Str(o, FieldNames.Stand)),
             Source = "booking",
             Vid = Int(o, FieldNames.Vid),
         };
+    }
+
+    /// <summary>Normalizza lo stand prenotato: "TBD" e simili valgono come non assegnato.</summary>
+    private static string? Stand(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var v = raw.Trim();
+        return FieldNames.NoStand.Contains(v, StringComparer.OrdinalIgnoreCase) ? null : v;
     }
 
     private static JsonElement? FindFlightArray(JsonElement root)

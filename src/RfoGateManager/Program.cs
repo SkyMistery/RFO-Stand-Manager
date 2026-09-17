@@ -172,6 +172,22 @@ app.MapPost("/api/stands/template", () =>
     return Results.Ok(new { path, count = plan.Catalog.Stands.Count });
 });
 
+/// Parametri di calcolo, regolabili durante l'evento senza ricompilare.
+app.MapGet("/api/options", () => Results.Ok(plan.Options));
+
+app.MapPost("/api/options", async (AllocationOptions body, CancellationToken ct) =>
+{
+    if (body.BufferMinutes < 0 || body.BufferMinutes > 120)
+        return Results.BadRequest(new { error = "Il margine deve stare fra 0 e 120 minuti." });
+
+    if (body.DefaultTurnaroundMinutes is < 10 or > 600)
+        return Results.BadRequest(new { error = "La sosta predefinita deve stare fra 10 e 600 minuti." });
+
+    plan.Options = body;
+    await plan.RecomputeAsync(ct);
+    return Results.Ok(plan.Options);
+});
+
 // --- Aurora -----------------------------------------------------------------------
 
 app.MapPost("/api/aurora/connect", async (CancellationToken ct) =>
@@ -307,6 +323,7 @@ static object Present(PlanSnapshot s, SharedDocument doc)
                 to = a.To,
                 reason = a.Reason,
                 conflict = a.Conflict,
+                oversize = a.Oversize,
                 pinned = doc.Pins.ContainsKey(a.Key),
                 aircraft = r?.AircraftType,
                 size = r?.Size.ToString(),
