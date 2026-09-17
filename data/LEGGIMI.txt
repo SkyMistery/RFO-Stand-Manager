@@ -1,8 +1,12 @@
-Metti qui dentro:
+stands.LIRN.json  gia' presente: i 38 stand di Capodichino dall'AIP Italia
+                  (AD 2 LIRN 2-11/2-12, AIRAC 02 OCT 2025), con apron, lettera di
+                  codice, apertura alare e lunghezza massima.
 
-  lirn.gts            il file stand del sector file Aurora (ID;ICAO;LAT;LON;tipo;)
-  stands.LIRN.json    gli attributi operativi degli stand
+                  Restano da compilare a mano tre campi che l'AIP non pubblica:
+                    contact   quali stand hanno il pontile
+                    airlines  compagnie con stand preferenziale
+                    blocks    coppie MARS (occupare uno rende inagibili gli altri)
 
-Il secondo lo genera l'app stessa: avviala, poi chiama una volta
-  POST http://127.0.0.1:5057/api/stands/template
-e ti scrive qui un file precompilato con tutti gli stand trovati, da rifinire a mano.
+lirn.gts          FACOLTATIVO. Il file stand del sector file Aurora, formato
+                  ID;ICAO;LAT;LON;tipo;. Aggiunge le coordinate, che servono solo
+                  per disegnare la mappa del piazzale. Senza, tutto il resto funziona.

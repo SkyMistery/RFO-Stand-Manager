@@ -201,10 +201,20 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
             why.Add("confermato dal piano precedente");
         }
 
-        // Non sprecare uno stand grande su un aereo piccolo.
-        var waste = (int)stand.MaxSize - (int)req.Size;
-        score += waste * 10;
-        if (waste == 0) why.Add("misura esatta");
+        // Non sprecare uno stand grande su un aereo piccolo. In metri se li conosciamo,
+        // altrimenti a salti di categoria.
+        if (stand.MaxWingspanM is { } maxSpan && req.WingspanM is { } span)
+        {
+            var slack = maxSpan - span;
+            score += slack;
+            if (slack <= 3) why.Add($"misura giusta ({span:0.#} m su {maxSpan:0.#} m)");
+        }
+        else
+        {
+            var waste = (int)stand.MaxSize - (int)req.Size;
+            score += waste * 10;
+            if (waste == 0) why.Add("categoria esatta");
+        }
 
         if (options.PreferContactStands && req.Use == "pax" && stand.Contact)
         {
@@ -225,9 +235,29 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
         return (score, text);
     }
 
+    /// <summary>
+    /// Verifica l'ammissibilita'. Quando conosciamo sia i limiti dello stand (AIP) sia le
+    /// misure del tipo, decidono quelle: la lettera di codice e' piu' grossolana e a Napoli
+    /// diversi stand codice C hanno limiti sotto i 36 m, dove un A320 non entra.
+    /// </summary>
     private static bool Fits(Stand stand, StandRequest req, out string why)
     {
-        if (req.Size > stand.MaxSize) { why = "size"; return false; }
+        var measured = false;
+
+        if (stand.MaxWingspanM is { } maxSpan && req.WingspanM is { } span)
+        {
+            measured = true;
+            if (span > maxSpan) { why = "size"; return false; }
+        }
+
+        if (stand.MaxLengthM is { } maxLen && req.LengthM is { } len)
+        {
+            measured = true;
+            if (len > maxLen) { why = "size"; return false; }
+        }
+
+        // Senza misure da confrontare resta la categoria.
+        if (!measured && req.Size > stand.MaxSize) { why = "size"; return false; }
 
         if (stand.Uses.Count > 0 && !stand.Uses.Contains(req.Use, StringComparer.OrdinalIgnoreCase))
         {
@@ -297,7 +327,7 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
                    : "Da prenotazione";
 
         if (!fits)
-            return $"{origin} su {stand.Id}, ma {req.AircraftType} (cat. {req.Size}) supera la categoria massima {stand.MaxSize} dello stand.";
+            return $"{origin} su {stand.Id}, ma {req.AircraftType} non ci sta: {Oversize(stand, req)}.";
 
         if (!free)
             return clashKey == MarsClash
@@ -305,6 +335,18 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
                 : $"{origin} su {stand.Id}, ma si sovrappone a {clashKey}.";
 
         return $"{origin} su {stand.Id}.";
+    }
+
+    /// <summary>Dice quale limite e' stato sforato, per scriverlo nel motivo.</summary>
+    private static string Oversize(Stand stand, StandRequest req)
+    {
+        if (stand.MaxWingspanM is { } maxSpan && req.WingspanM is { } span && span > maxSpan)
+            return $"apertura alare {span:0.#} m contro un massimo di {maxSpan:0.#} m";
+
+        if (stand.MaxLengthM is { } maxLen && req.LengthM is { } len && len > maxLen)
+            return $"lunghezza {len:0.#} m contro un massimo di {maxLen:0.#} m";
+
+        return $"categoria {req.Size} contro un massimo di {stand.MaxSize}";
     }
 
     private static string? Pick(IReadOnlyDictionary<string, string> dict, string key)

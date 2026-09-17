@@ -71,6 +71,74 @@ public static class AircraftCatalog
         "B77L", "B74S", "MD11", "IL76", "A124", "A225", "C130", "B763", "AT72", "AT76",
     };
 
+    /// <summary>Apertura alare e lunghezza fuori tutto, in metri.</summary>
+    public readonly record struct AircraftDimensions(double WingspanM, double LengthM);
+
+    /// <summary>
+    /// Misure dei tipi piu' comuni, per confrontarle con i limiti di stand dell'AIP.
+    /// Un tipo assente qui ricade sulla lettera di codice, che e' piu' grossolana.
+    /// </summary>
+    private static readonly Dictionary<string, AircraftDimensions> Dimensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Aviazione generale e business jet
+        ["C152"] = new(10.16, 7.29),  ["C172"] = new(11.00, 8.28),  ["C182"] = new(10.97, 8.84),
+        ["P28A"] = new(10.67, 7.25),  ["PA28"] = new(10.67, 7.25),  ["SR22"] = new(11.68, 7.92),
+        ["DA40"] = new(11.94, 8.06),  ["DA42"] = new(13.42, 8.56),  ["BE58"] = new(11.53, 9.09),
+        ["BE20"] = new(16.61, 13.34), ["PC12"] = new(16.28, 14.40), ["C510"] = new(12.37, 12.98),
+        ["C25A"] = new(15.16, 14.38), ["C25B"] = new(16.26, 15.45), ["C56X"] = new(16.97, 14.91),
+        ["CL60"] = new(19.61, 20.85), ["GLF4"] = new(23.72, 26.92), ["GLF5"] = new(28.50, 29.40),
+        ["GLF6"] = new(28.50, 30.40), ["FA7X"] = new(26.21, 23.38), ["E50P"] = new(12.47, 12.82),
+        ["E55P"] = new(14.35, 14.21),
+
+        // Regionali
+        ["AT43"] = new(24.57, 22.67), ["AT45"] = new(24.57, 22.67), ["AT72"] = new(27.05, 27.17),
+        ["AT75"] = new(27.05, 27.17), ["AT76"] = new(27.05, 27.17),
+        ["DH8C"] = new(25.91, 25.68), ["DH8D"] = new(28.42, 32.84),
+        ["SF34"] = new(21.44, 19.72), ["J328"] = new(20.98, 21.28),
+        ["E135"] = new(20.04, 26.33), ["E145"] = new(20.04, 29.87), ["E45X"] = new(20.04, 29.87),
+        ["CRJ1"] = new(21.21, 26.77), ["CRJ2"] = new(21.21, 26.77), ["CRJ7"] = new(23.24, 32.30),
+        ["CRJ9"] = new(24.85, 36.40), ["CRJX"] = new(26.18, 39.10),
+
+        // Narrowbody
+        ["A318"] = new(34.10, 31.44), ["A319"] = new(35.80, 33.84), ["A320"] = new(35.80, 37.57),
+        ["A321"] = new(35.80, 44.51), ["A19N"] = new(35.80, 33.84), ["A20N"] = new(35.80, 37.57),
+        ["A21N"] = new(35.80, 44.51),
+        ["B733"] = new(28.88, 33.40), ["B734"] = new(28.88, 36.45), ["B735"] = new(28.88, 31.00),
+        ["B736"] = new(34.30, 31.20), ["B737"] = new(34.30, 33.63), ["B738"] = new(35.79, 39.47),
+        ["B739"] = new(35.79, 42.11), ["B37M"] = new(35.90, 35.56), ["B38M"] = new(35.90, 39.52),
+        ["B39M"] = new(35.90, 42.16), ["B712"] = new(28.45, 37.80),
+        ["BCS1"] = new(35.10, 35.00), ["BCS3"] = new(35.10, 38.70),
+        ["E170"] = new(26.00, 29.90), ["E175"] = new(26.00, 31.68), ["E190"] = new(28.72, 36.24),
+        ["E195"] = new(28.72, 38.65), ["E290"] = new(33.72, 36.24), ["E295"] = new(35.10, 41.50),
+        ["MD82"] = new(32.85, 45.06), ["MD83"] = new(32.85, 45.06), ["MD88"] = new(32.85, 45.06),
+        ["MD87"] = new(32.85, 39.75), ["F100"] = new(28.08, 35.53), ["SU95"] = new(27.80, 29.94),
+
+        // Widebody e quadrigetti
+        ["B752"] = new(38.05, 47.32), ["B753"] = new(38.05, 54.47),
+        ["B762"] = new(47.57, 48.51), ["B763"] = new(47.57, 54.94), ["B764"] = new(51.90, 61.37),
+        ["A306"] = new(44.84, 54.08), ["A30B"] = new(44.84, 53.62), ["A310"] = new(43.90, 46.66),
+        ["A332"] = new(60.30, 58.82), ["A333"] = new(60.30, 63.69),
+        ["A338"] = new(64.00, 58.80), ["A339"] = new(64.00, 63.70),
+        ["A342"] = new(60.30, 59.40), ["A343"] = new(60.30, 63.69),
+        ["A345"] = new(63.45, 67.90), ["A346"] = new(63.45, 75.30),
+        ["A359"] = new(64.75, 66.80), ["A35K"] = new(64.75, 73.79),
+        ["B772"] = new(60.93, 63.73), ["B773"] = new(60.93, 73.86),
+        ["B77L"] = new(64.80, 63.70), ["B77W"] = new(64.80, 73.86),
+        ["B788"] = new(60.12, 56.72), ["B789"] = new(60.12, 62.81), ["B78X"] = new(60.12, 68.28),
+        ["B741"] = new(59.64, 70.66), ["B742"] = new(59.64, 70.66), ["B743"] = new(59.64, 70.66),
+        ["B744"] = new(64.44, 70.66), ["B74S"] = new(59.64, 56.31), ["B748"] = new(68.40, 76.25),
+        ["MD11"] = new(51.66, 61.21), ["IL76"] = new(50.50, 46.59), ["C130"] = new(40.41, 29.79),
+        ["DC10"] = new(50.40, 55.50),
+        ["A388"] = new(79.75, 72.72), ["A124"] = new(73.30, 69.10), ["A225"] = new(88.40, 84.00),
+    };
+
+    /// <summary>Misure del tipo, oppure null se non lo conosciamo.</summary>
+    public static AircraftDimensions? DimensionsOf(string? icaoType)
+    {
+        if (string.IsNullOrWhiteSpace(icaoType)) return null;
+        return Dimensions.TryGetValue(icaoType.Trim(), out var d) ? d : null;
+    }
+
     public static SizeCategory SizeOf(string? icaoType)
     {
         if (string.IsNullOrWhiteSpace(icaoType)) return SizeCategory.C;

@@ -12,6 +12,15 @@ public sealed class StandOverride
     /// <summary>Categoria ICAO massima: A, B, C, D, E, F.</summary>
     public string? MaxSize { get; set; }
 
+    /// <summary>Apertura alare massima in metri (AIP). Se c'e', batte la categoria.</summary>
+    public double? MaxWingspanM { get; set; }
+
+    /// <summary>Lunghezza fuori tutto massima in metri (AIP).</summary>
+    public double? MaxLengthM { get; set; }
+
+    /// <summary>Piazzale di appartenenza, solo informativo.</summary>
+    public int? Apron { get; set; }
+
     public bool? Contact { get; set; }
     public List<string>? Uses { get; set; }
     public List<string>? Airlines { get; set; }
@@ -55,49 +64,41 @@ public static class StandCatalog
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
+    /// <summary>
+    /// Costruisce l'elenco stand. Le due sorgenti sono indipendenti: il file di attributi
+    /// basta da solo a far funzionare l'allocazione, il .gts aggiunge le coordinate (che
+    /// servono solo per disegnare il piazzale). Se manca uno dei due si prosegue con l'altro.
+    /// </summary>
     public static StandCatalogResult Load(string dataDirectory, string airport)
     {
         var warnings = new List<string>();
         var icao = airport.ToUpperInvariant();
 
-        var gtsPath = FindFile(dataDirectory, [$"{icao}.gts", $"{icao.ToLowerInvariant()}.gts"], "*.gts");
-        if (gtsPath is null)
-        {
-            warnings.Add($"Nessun file .gts trovato in '{dataDirectory}'. Copiaci dentro {icao.ToLowerInvariant()}.gts del sector file.");
-            return new StandCatalogResult { Warnings = warnings };
-        }
-
-        List<Stand> stands;
-        try
-        {
-            stands = GtsParser.ParseFile(gtsPath, icao);
-        }
-        catch (Exception ex)
-        {
-            warnings.Add($"Il file '{gtsPath}' non è leggibile: {ex.Message}");
-            return new StandCatalogResult { GtsPath = gtsPath, Warnings = warnings };
-        }
-
-        if (stands.Count == 0)
-        {
-            // Il file potrebbe contenere solo altri aeroporti: riproviamo senza filtro.
-            stands = GtsParser.ParseFile(gtsPath);
-            if (stands.Count > 0)
-                warnings.Add($"Nessuno stand marcato {icao} in '{Path.GetFileName(gtsPath)}': caricati tutti i {stands.Count} stand del file.");
-            else
-                warnings.Add($"'{Path.GetFileName(gtsPath)}' non contiene stand riconoscibili (atteso 'ID;ICAO;LAT;LON;tipo;').");
-        }
-
         var overridePath = Path.Combine(dataDirectory, $"stands.{icao}.json");
         var overrides = LoadOverrides(overridePath, warnings, out var defaultSize);
 
-        var merged = stands.Select(s => Apply(s, overrides, defaultSize)).ToList();
+        var gtsPath = FindFile(dataDirectory, [$"{icao}.gts", $"{icao.ToLowerInvariant()}.gts"], "*.gts");
+        var fromGts = ReadGts(gtsPath, icao, warnings);
 
-        var unknown = overrides.Keys
-            .Where(k => !merged.Any(s => s.Id.Equals(k, StringComparison.OrdinalIgnoreCase)))
+        // Gli stand dichiarati negli attributi ma assenti dal .gts restano utilizzabili:
+        // senza coordinate non compaiono sulla mappa, ma si possono assegnare lo stesso.
+        var known = fromGts.Select(s => s.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var extra = overrides.Values
+            .Where(o => !known.Contains(o.Id))
+            .Select(o => new Stand { Id = o.Id, Icao = icao })
             .ToList();
-        if (unknown.Count > 0)
-            warnings.Add($"Stand presenti in stands.{icao}.json ma non nel .gts: {string.Join(", ", unknown)}.");
+
+        if (fromGts.Count == 0 && extra.Count > 0)
+            warnings.Add($"Stand presi da stands.{icao}.json: senza il .gts mancano solo le coordinate per la mappa.");
+        else if (extra.Count > 0)
+            warnings.Add($"Stand presenti in stands.{icao}.json ma non nel .gts: {string.Join(", ", extra.Select(e => e.Id))}.");
+
+        var merged = fromGts.Concat(extra)
+            .Select(s => Apply(s, overrides, defaultSize))
+            .ToList();
+
+        if (merged.Count == 0)
+            warnings.Add($"Nessuno stand disponibile: serve almeno stands.{icao}.json oppure {icao.ToLowerInvariant()}.gts in '{dataDirectory}'.");
 
         return new StandCatalogResult
         {
@@ -106,6 +107,35 @@ public static class StandCatalog
             OverridePath = File.Exists(overridePath) ? overridePath : null,
             Warnings = warnings,
         };
+    }
+
+    private static List<Stand> ReadGts(string? gtsPath, string icao, List<string> warnings)
+    {
+        if (gtsPath is null)
+        {
+            warnings.Add($"Nessun file .gts in cartella: gli stand non avranno coordinate. Copiaci {icao.ToLowerInvariant()}.gts del sector file.");
+            return [];
+        }
+
+        try
+        {
+            var stands = GtsParser.ParseFile(gtsPath, icao);
+            if (stands.Count > 0) return stands;
+
+            // Il file potrebbe contenere solo altri aeroporti: riproviamo senza filtro.
+            stands = GtsParser.ParseFile(gtsPath);
+            if (stands.Count > 0)
+                warnings.Add($"Nessuno stand marcato {icao} in '{Path.GetFileName(gtsPath)}': caricati tutti i {stands.Count} stand del file.");
+            else
+                warnings.Add($"'{Path.GetFileName(gtsPath)}' non contiene stand riconoscibili (atteso 'ID;ICAO;LAT;LON;tipo;').");
+
+            return stands;
+        }
+        catch (Exception ex)
+        {
+            warnings.Add($"Il file '{gtsPath}' non è leggibile: {ex.Message}");
+            return [];
+        }
     }
 
     /// <summary>
@@ -124,14 +154,16 @@ public static class StandCatalog
             Stands = stands.Select(s => new StandOverride
             {
                 Id = s.Id,
-                MaxSize = "C",
-                Contact = false,
-                Uses = [],
-                Airlines = [],
-                Blocks = [],
-                Priority = 100,
-                Disabled = false,
-                Note = s.GtsType,
+                MaxSize = s.MaxSize.ToString(),
+                MaxWingspanM = s.MaxWingspanM,
+                MaxLengthM = s.MaxLengthM,
+                Contact = s.Contact,
+                Uses = s.Uses.ToList(),
+                Airlines = s.Airlines.ToList(),
+                Blocks = s.Blocks.ToList(),
+                Priority = s.Priority,
+                Disabled = s.Disabled,
+                Note = s.Note ?? s.GtsType,
             }).ToList(),
         };
 
@@ -147,7 +179,7 @@ public static class StandCatalog
 
         if (!File.Exists(path))
         {
-            warnings.Add($"'{Path.GetFileName(path)}' non trovato: tutti gli stand valgono categoria C, senza pontili né MARS.");
+            warnings.Add($"'{Path.GetFileName(path)}' non trovato: nessuna misura, nessun pontile, nessun MARS. Genera il file con POST /api/stands/template.");
             return new Dictionary<string, StandOverride>(StringComparer.OrdinalIgnoreCase);
         }
 
@@ -181,6 +213,8 @@ public static class StandCatalog
         return s with
         {
             MaxSize = ParseSize(o.MaxSize) ?? defaultSize,
+            MaxWingspanM = o.MaxWingspanM,
+            MaxLengthM = o.MaxLengthM,
             Contact = o.Contact ?? false,
             Uses = o.Uses ?? [],
             Airlines = o.Airlines ?? [],

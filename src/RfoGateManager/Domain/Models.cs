@@ -17,6 +17,15 @@ public sealed record Stand
     /// <summary>Massima categoria accettata. Un C non entra in uno stand B.</summary>
     public SizeCategory MaxSize { get; init; } = SizeCategory.C;
 
+    /// <summary>
+    /// Apertura alare massima in metri, dall'AIP. Quando c'e' batte la categoria: a Napoli
+    /// lo stand 23 e' codice C ma accetta solo 32 m, e un A320 (35,8 m) non ci entra.
+    /// </summary>
+    public double? MaxWingspanM { get; init; }
+
+    /// <summary>Lunghezza fuori tutto massima in metri, dall'AIP.</summary>
+    public double? MaxLengthM { get; init; }
+
     /// <summary>Stand con pontile.</summary>
     public bool Contact { get; init; }
 
@@ -78,6 +87,13 @@ public sealed record StandRequest
     public required string Callsign { get; init; }
     public string AircraftType { get; init; } = "";
     public SizeCategory Size { get; init; } = SizeCategory.C;
+
+    /// <summary>Apertura alare del tipo, se la conosciamo.</summary>
+    public double? WingspanM { get; init; }
+
+    /// <summary>Lunghezza del tipo, se la conosciamo.</summary>
+    public double? LengthM { get; init; }
+
     public string Use { get; init; } = "pax";
     public string? AirlineCode { get; init; }
 

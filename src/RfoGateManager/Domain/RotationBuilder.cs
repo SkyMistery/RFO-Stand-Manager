@@ -87,12 +87,16 @@ public static class RotationBuilder
                 : AircraftCatalog.IsGeneralAviation(type) ? "ga"
                 : "pax";
 
+        var dims = AircraftCatalog.DimensionsOf(type);
+
         return new StandRequest
         {
             Key = $"{primary.Callsign}:{from:yyyyMMddHHmm}",
             Callsign = primary.Callsign,
             AircraftType = type,
             Size = AircraftCatalog.SizeOf(type),
+            WingspanM = dims?.WingspanM,
+            LengthM = dims?.LengthM,
             Use = use,
             AirlineCode = AircraftCatalog.AirlineOf(primary.Callsign),
             From = from,

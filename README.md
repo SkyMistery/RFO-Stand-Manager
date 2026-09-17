@@ -26,7 +26,8 @@ sul disco e non passa mai dal browser.
 
 1. In Aurora: **F7 → Other → 3rd Party Software Access = YES**. Senza questo la porta 1130
    non risponde e l'app resta in sola lettura.
-2. Metti in `data\` il file stand del sector file: `lirn.gts`.
+2. Facoltativo: metti in `data\` il file `lirn.gts` del sector file, per le coordinate.
+   Gli stand di Napoli ci sono già in `data\stands.LIRN.json`.
 3. Apri `secrets\booking.json` e inserisci la `x-key` e la data dell'evento.
 4. Doppio click su `RfoGateManager.exe`. Si apre il browser.
 5. Clicca sul chip **Aurora non connesso** in alto per agganciare Aurora.
@@ -37,36 +38,46 @@ Argomenti da riga di comando: `--no-browser`, `--port=5099`.
 
 ## Il file degli stand
 
-Aurora conosce i nomi e le coordinate degli stand (`lirn.gts`, formato `ID;ICAO;LAT;LON;tipo;`)
-ma non sa quanto sono grandi, quali hanno il pontile e quali sono MARS. Quella parte sta in
-`data\stands.LIRN.json`, che l'app sa precompilare:
+`data\stands.LIRN.json` contiene i **38 stand di Capodichino**, presi dall'AIP Italia
+(AD 2 LIRN 2-11 e 2-12, AIRAC 02 OCT 2025, dati GESAC): apron di appartenenza, lettera di
+codice, **apertura alare e lunghezza massima**.
 
-```bash
-curl -X POST http://127.0.0.1:5057/api/stands/template
-```
-
-Scrive un file con tutti gli stand trovati, da rifinire a mano:
+Il file `lirn.gts` del sector file Aurora è **facoltativo**: aggiunge le coordinate, che
+servono solo per disegnare il piazzale. Senza, l'assegnazione funziona lo stesso.
 
 ```jsonc
 {
-  "airport": "LIRN",
-  "defaultMaxSize": "C",
-  "stands": [
-    {
-      "id": "201",
-      "maxSize": "C",          // categoria ICAO: A <15m, B 15-24, C 24-36, D 36-52, E 52-65, F 65-80
-      "contact": true,         // con pontile: preferito per i passeggeri
-      "uses": ["pax"],         // vuoto = qualsiasi uso; altrimenti pax, cargo, ga, mil
-      "airlines": ["AZA"],     // compagnie preferenziali (prefisso ICAO del callsign)
-      "blocks": ["201L","201R"], // MARS: occupando questo, quegli altri diventano inagibili
-      "priority": 100,         // a parità di punteggio vince il più basso
-      "disabled": false
-    }
-  ]
+  "id": "23",
+  "maxSize": "C",            // lettera di codice ICAO
+  "maxWingspanM": 32,        // limiti AIP: se ci sono, battono la lettera di codice
+  "maxLengthM": 37,
+  "apron": 1,
+  "contact": true,           // con pontile: preferito per i passeggeri  ← da completare
+  "uses": ["pax"],           // vuoto = qualsiasi uso; altrimenti pax, cargo, ga, mil
+  "airlines": ["AZA"],       // compagnie preferenziali (prefisso ICAO)   ← da completare
+  "blocks": ["23L","23R"],   // MARS: occupando questo, quelli diventano inagibili ← da completare
+  "priority": 100,           // a parità di punteggio vince il più basso
+  "disabled": false
 }
 ```
 
 La relazione `blocks` viene resa simmetrica al caricamento: basta dichiararla da un lato.
+
+**Tre campi restano da compilare a mano**, perché l'AIP non li pubblica: `contact` (quali
+stand hanno il pontile), `airlines` e `blocks` (le coppie MARS).
+
+### Perché le misure contano più della lettera di codice
+
+La lettera di codice è troppo grossolana per assegnare uno stand. A Napoli:
+
+- lo stand **23** è codice C ma accetta 32 m di apertura: un **A320** (35,8 m) **non ci entra**;
+- lo stand **16** ha 36 m di apertura ma solo 39 m di lunghezza: l'**A321** (44,5 m) non ci sta,
+  pur essendo largo quanto un A320 che invece ci sta;
+- nessuno stand supera i **61 m** di apertura: **B777-300ER e A350 non hanno posto a Capodichino**,
+  e il programma lo dice invece di inventarsi una collocazione.
+
+Quando conosce sia i limiti dello stand sia le misure del tipo, il motore confronta i metri.
+Per un tipo che non ha in tabella ricade sulla lettera di codice, che è meno precisa.
 
 ---
 

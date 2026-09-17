@@ -10,13 +10,16 @@ public class StandAllocatorTests
     private static Stand Stand(
         string id, SizeCategory max = SizeCategory.C, bool contact = false,
         string[]? uses = null, string[]? airlines = null, string[]? blocks = null,
-        bool disabled = false, int priority = 100) => new()
+        bool disabled = false, int priority = 100,
+        double? maxSpan = null, double? maxLength = null) => new()
     {
         Id = id,
         Icao = "LIRN",
         Lat = 40.886,
         Lon = 14.291,
         MaxSize = max,
+        MaxWingspanM = maxSpan,
+        MaxLengthM = maxLength,
         Contact = contact,
         Uses = uses ?? [],
         Airlines = airlines ?? [],
@@ -28,12 +31,15 @@ public class StandAllocatorTests
     private static StandRequest Request(
         string callsign, int startMin, int durationMin,
         SizeCategory size = SizeCategory.C, string use = "pax",
-        string? booked = null, string? actual = null) => new()
+        string? booked = null, string? actual = null,
+        string type = "A320", double? span = null, double? length = null) => new()
     {
         Key = $"{callsign}:{startMin}",
         Callsign = callsign,
-        AircraftType = "A320",
+        AircraftType = type,
         Size = size,
+        WingspanM = span,
+        LengthM = length,
         Use = use,
         AirlineCode = callsign.Length >= 3 ? callsign[..3] : null,
         From = T0.AddMinutes(startMin),
@@ -254,5 +260,91 @@ public class StandAllocatorTests
         var a = Assert.Single(result.Assignments);
         Assert.True(a.Conflict);
         Assert.Contains("non presente nel file stand", a.Reason);
+    }
+
+    // --- Misure reali dall'AIP, che battono la lettera di codice ---------------
+
+    [Fact]
+    public void Un_A320_non_entra_in_uno_stand_codice_C_limitato_a_32_metri()
+    {
+        // Napoli stand 23: codice C, ma l'AIP pubblica 32 m di apertura massima.
+        var allocator = new StandAllocator(
+            [Stand("23", SizeCategory.C, maxSpan: 32, maxLength: 37)], Options());
+
+        var result = allocator.Allocate(
+            [Request("AZA100", 0, 60, type: "A320", span: 35.8, length: 37.57)], T0);
+
+        var a = Assert.Single(result.Assignments);
+        Assert.Null(a.StandId);
+        Assert.Contains("troppo piccoli", a.Reason);
+    }
+
+    [Fact]
+    public void Lo_stesso_stand_accoglie_un_regionale_che_ci_sta()
+    {
+        var allocator = new StandAllocator(
+            [Stand("23", SizeCategory.C, maxSpan: 32, maxLength: 37)], Options());
+
+        var result = allocator.Allocate(
+            [Request("AZA100", 0, 60, type: "E190", span: 28.72, length: 36.24)], T0);
+
+        Assert.Equal("23", Assert.Single(result.Assignments).StandId);
+    }
+
+    [Fact]
+    public void Anche_la_lunghezza_esclude_uno_stand_con_apertura_sufficiente()
+    {
+        // Napoli stand 16: 36 m di apertura ma solo 39 m di lunghezza.
+        // L'A321 ha la stessa apertura dell'A320 ed e' lungo 44,5 m.
+        var allocator = new StandAllocator(
+            [Stand("16", SizeCategory.C, maxSpan: 36, maxLength: 39)], Options());
+
+        var result = allocator.Allocate(
+            [Request("AZA100", 0, 60, type: "A321", span: 35.8, length: 44.51)], T0);
+
+        Assert.Null(Assert.Single(result.Assignments).StandId);
+    }
+
+    [Fact]
+    public void Il_motivo_del_rifiuto_dice_quale_misura_ha_sforato()
+    {
+        var allocator = new StandAllocator(
+            [Stand("23", SizeCategory.C, maxSpan: 32, maxLength: 37)], Options());
+
+        var result = allocator.Allocate(
+            [Request("AZA100", 0, 60, type: "A320", span: 35.8, length: 37.57, booked: "23")], T0);
+
+        var a = Assert.Single(result.Assignments);
+        Assert.True(a.Conflict);
+        Assert.Contains("apertura alare", a.Reason);
+        Assert.Contains("35,8", a.Reason.Replace('.', ','));
+    }
+
+    [Fact]
+    public void Fra_due_stand_capienti_vince_quello_che_spreca_meno_metri()
+    {
+        var allocator = new StandAllocator([
+            Stand("11", SizeCategory.E, maxSpan: 61, maxLength: 60),
+            Stand("12", SizeCategory.C, maxSpan: 36, maxLength: 45),
+        ], Options());
+
+        var result = allocator.Allocate(
+            [Request("AZA100", 0, 60, type: "A320", span: 35.8, length: 37.57)], T0);
+
+        var a = Assert.Single(result.Assignments);
+        Assert.Equal("12", a.StandId);
+        Assert.Contains("misura giusta", a.Reason);
+    }
+
+    [Fact]
+    public void Un_tipo_di_misure_ignote_ricade_sulla_lettera_di_codice()
+    {
+        var allocator = new StandAllocator(
+            [Stand("61", SizeCategory.B, maxSpan: 25, maxLength: 31)], Options());
+
+        // Nessuna misura nota: resta il confronto fra categorie, C non entra in B.
+        var result = allocator.Allocate([Request("AZA100", 0, 60, type: "XXXX")], T0);
+
+        Assert.Null(Assert.Single(result.Assignments).StandId);
     }
 }
