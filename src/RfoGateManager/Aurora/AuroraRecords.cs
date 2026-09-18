@@ -1,6 +1,6 @@
 namespace RfoGateManager.Aurora;
 
-/// <summary>Piano di volo restituito da <c>#FP</c> (15 campi, nell'ordine del manuale).</summary>
+/// <summary>Piano di volo restituito da <c>#FP</c> (15 campi).</summary>
 public sealed record AuroraFlightPlan
 {
     public required string Callsign { get; init; }
@@ -29,8 +29,10 @@ public sealed record AuroraFlightPlan
         EstimatedDepartureTime = At(f, 3),
         AircraftType = At(f, 4),
         WakeTurbulence = At(f, 5),
-        FlightType = At(f, 6),
-        FlightRules = At(f, 7),
+        // Il manuale mette prima il tipo di volo e poi le regole, ma Aurora manda il
+        // contrario: verificato su un volo vero, arriva "I;S" (IFR, poi linea).
+        FlightRules = At(f, 6),
+        FlightType = At(f, 7),
         Equipment = At(f, 8),
         CruisingAltitude = At(f, 9),
         CruisingSpeed = At(f, 10),
