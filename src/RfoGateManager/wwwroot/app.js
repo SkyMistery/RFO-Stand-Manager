@@ -137,13 +137,15 @@ function renderSelected(r) {
   }
 
   const hasStand = Boolean(r.suggestion);
+  const standClass = !r.inPlan ? 'selected-stand off'
+                   : hasStand ? 'selected-stand' : 'selected-stand none';
+  const standText = !r.inPlan ? 'fuori piano'
+                  : hasStand ? esc(r.suggestion) : 'nessuno stand libero';
   box.className = 'selected-box';
   box.innerHTML = `
     <div class="selected-grid">
       <div class="selected-callsign">${esc(r.callsign)}</div>
-      <div class="${hasStand ? 'selected-stand' : 'selected-stand none'}">
-        ${hasStand ? esc(r.suggestion) : 'nessuno stand libero'}
-      </div>
+      <div class="${standClass}">${standText}</div>
       <div class="selected-meta">${esc(r.reason || '')}</div>
       <div class="actions">
         <input type="text" id="selStand" value="${esc(r.suggestion || '')}" placeholder="stand">

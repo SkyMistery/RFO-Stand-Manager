@@ -217,10 +217,14 @@ app.MapGet("/api/aurora/selected", async (CancellationToken ct) =>
         return Results.Ok(new
         {
             callsign,
+            // Un traffico che non tocca l'aeroporto (un sorvolo) non e' "senza stand": e' fuori piano.
+            inPlan = assignment is not null,
             suggestion = assignment?.StandId,
             key = assignment?.Key,
-            reason = assignment?.Reason,
+            reason = assignment?.Reason
+                     ?? $"{callsign} non arriva né parte da {config.Airport}: nessuno stand da assegnare.",
             conflict = assignment?.Conflict ?? false,
+            oversize = assignment?.Oversize ?? false,
         });
     }
     catch (AuroraException ex)
