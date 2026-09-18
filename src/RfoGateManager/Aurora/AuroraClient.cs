@@ -133,12 +133,27 @@ public sealed class AuroraClient : IAsyncDisposable
         return AuroraTrafficPosition.Parse(callsign, body);
     }
 
-    /// <summary>Assegna lo stand (<c>#LBGTE;CALLSIGN;GATE</c>). È il comando che fa il lavoro vero.</summary>
+    /// <summary>
+    /// Assegna lo stand (<c>#LBGTE;CALLSIGN;GATE</c>). È il comando che fa il lavoro vero.
+    /// Aurora lo accetta solo sul traffico assunto dalla posizione connessa, altrimenti
+    /// risponde <c>Traffic not assumed</c>. L'etichetta compare dopo uno o due secondi.
+    /// </summary>
     public async Task AssignGateAsync(string callsign, string gate, CancellationToken ct = default)
     {
         Validate(callsign);
         Validate(gate);
         await RequestAsync("LBGTE", $"{callsign};{gate}", ct);
+    }
+
+    /// <summary>
+    /// Cancella lo stand assegnato mandando <c>#LBGTE;CALLSIGN;</c> con gate vuoto. Il manuale
+    /// non lo documenta; verificato su Aurora vero: la risposta e' immediata, ma l'etichetta
+    /// sparisce dopo qualche secondo.
+    /// </summary>
+    public async Task ClearGateAsync(string callsign, CancellationToken ct = default)
+    {
+        Validate(callsign);
+        await RequestAsync("LBGTE", $"{callsign};", ct);
     }
 
     public async Task SendPrivateMessageAsync(string callsign, string text, CancellationToken ct = default)

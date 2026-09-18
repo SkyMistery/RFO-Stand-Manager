@@ -269,6 +269,24 @@ app.MapPost("/api/aurora/assign", async (AssignRequest body, CancellationToken c
     }
 });
 
+/// Toglie lo stand da Aurora, e se c'era un'assegnazione fissata la libera per tutti.
+app.MapPost("/api/aurora/clear", async (ClearRequest body, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(body.Callsign))
+        return Results.BadRequest(new { error = "Callsign obbligatorio." });
+
+    try
+    {
+        await aurora.ClearGateAsync(body.Callsign, ct);
+        if (!string.IsNullOrWhiteSpace(body.Key)) await plan.PinAsync(body.Key, null, ct);
+        return Results.Ok(new { ok = true, message = $"Stand tolto a {body.Callsign}." });
+    }
+    catch (AuroraException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapPost("/api/aurora/show", async (ShowRequest body, CancellationToken ct) =>
 {
     try
@@ -366,6 +384,7 @@ internal sealed record PinRequest(string Key, string? Stand);
 internal sealed record StandClosedRequest(string Stand, bool Closed);
 internal sealed record AssignRequest(string Callsign, string Stand, string? Key, bool PrivateMessage);
 internal sealed record ShowRequest(string Callsign);
+internal sealed record ClearRequest(string Callsign, string? Key);
 
 /// <summary>Tiene il piano aggiornato in sottofondo, così la UI trova sempre dati freschi.</summary>
 internal sealed class RefreshWorker(PlanService plan, ILogger<RefreshWorker> log) : BackgroundService

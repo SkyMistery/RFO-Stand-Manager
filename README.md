@@ -162,7 +162,11 @@ per tutti. Senza URL l'app lavora da sola e salva lo stato in `state.local.json`
 l'app legge chi l'ha assunto (`#TRPOS` campo 12) e te lo dice prima che tu provi ad assegnare.
 Per questo all'evento lo stand lo assegna chi ha il traffico in carico in quel momento.
 
-Collaudato su Aurora vero, e il manuale sbaglia in quattro punti: `#CONN` e `#CTRLRWY` rispondono
+Collaudato fino in fondo su Aurora vero: lo stand scritto con `#LBGTE` ricompare nel campo 21
+di `#TRPOS` dopo uno o due secondi. Mandando il gate vuoto (`#LBGTE;CALLSIGN;`) l'etichetta si
+cancella: il manuale non lo dice, l'app lo usa in `POST /api/aurora/clear`.
+
+Il manuale sbaglia in quattro punti: `#CONN` e `#CTRLRWY` rispondono
 col proprio nome e non con `#CTRL`; nel piano di volo (`#FP`) i campi 7 e 8 sono invertiti (prima
 le regole, poi il tipo); gli errori arrivano come `@ERR;#COMANDO;argomenti;messaggio` e non con `$`.
 
