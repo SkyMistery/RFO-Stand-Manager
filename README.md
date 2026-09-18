@@ -17,7 +17,7 @@ ospitata non potrà mai comandare Aurora.
 
 La soluzione è un eseguibile che fa entrambe le cose: tiene la connessione TCP verso Aurora e
 serve la sua interfaccia su `http://127.0.0.1:5057`, che si apre nel browser di sistema. Per
-chi lo usa è "scarica una cartella e fai doppio click". In più la `x-key` del booking resta
+chi lo usa è "scarica una cartella e fai doppio click". In più la chiave del booking resta
 sul disco e non passa mai dal browser.
 
 ---
@@ -28,11 +28,31 @@ sul disco e non passa mai dal browser.
    non risponde e l'app resta in sola lettura.
 2. Facoltativo: metti in `data\` il file `lirn.gts` del sector file, per le coordinate.
    Gli stand di Napoli ci sono già in `data\stands.LIRN.json`.
-3. Apri `secrets\booking.json` e inserisci la `x-key` e la data dell'evento.
+3. Apri `secrets\booking.json` e inserisci la chiave del booking nel campo `bookingXKey`
+   (l'app la manda come header `x-api-key`). Per lavorare con le altre postazioni aggiungi
+   anche `sharedStateUrl` e `sharedStateToken`, vedi *Stato condiviso*.
 4. Doppio click su `RfoGateManager.exe`. Si apre il browser.
-5. Clicca sul chip **Aurora non connesso** in alto per agganciare Aurora.
+5. Clicca sul chip **Aurora non connesso** in alto per agganciare Aurora. Se in
+   `booking.json` il campo `operator` è vuoto, l'app usa come nome il callsign con cui sei
+   connesso (per esempio `LIRN_GND`): è quello che le altre postazioni vedono accanto alle
+   tue modifiche.
 
 Argomenti da riga di comando: `--no-browser`, `--port=5099`.
+
+### Cosa c'è nella pagina
+
+- **In alto** i chip di stato: Aurora, Whazzup, booking, stand caricati, sincronizzazione.
+  Verde va, ambra è una limitazione, rosso non va; passandoci sopra si legge il motivo.
+- **Traffico selezionato in Aurora**: lo stand del piano per l'aereo che hai cliccato in
+  Aurora, gli stand alternativi, chi l'ha assunto, e i pulsanti *Solo PM* e *Assegna in Aurora*.
+- **Partenze**: la strippiera, in ordine di EOBT.
+- **Piano stand**: tutte le occupazioni, con gli ultimi cambi di stand in cima e, per ogni
+  riga, *Stand ▾*, *Mostra*, *PM* e *Assegna*.
+- **Occupazione del piazzale**: la timeline per stand.
+
+Colori delle righe: **rosso** due aerei sullo stesso stand, **azzurro** riassegnato perché il
+suo stand è occupato, **ambra** aereo più grande dello stand, accettato perché lo stand era già
+deciso.
 
 ---
 
@@ -49,16 +69,17 @@ settore italiano (`Include\IT\lirn.gts`). Nel `.gts` attuale manca lo stand 67.
 
 ```jsonc
 {
-  "id": "23",
+  "id": "12",
   "maxSize": "C",            // lettera di codice ICAO
-  "maxWingspanM": 32,        // limiti AIP: se ci sono, battono la lettera di codice
-  "maxLengthM": 37,
+  "maxWingspanM": 36,        // limiti AIP: se ci sono, battono la lettera di codice
+  "maxLengthM": 45,
   "apron": 1,
-  "contact": true,           // con pontile: preferito per i passeggeri  ← da completare
-  "uses": ["pax"],           // vuoto = qualsiasi uso; altrimenti pax, cargo, ga, mil
-  "airlines": ["AZA"],       // compagnie preferenziali (prefisso ICAO)   ← da completare
-  "blocks": ["23L","23R"],   // MARS: occupando questo, quelli diventano inagibili ← da completare
-  "priority": 100,           // a parità di punteggio vince il più basso
+  "priority": 100,           // ordine di comodità: più basso = più comodo (vedi sotto)
+  "reservedFor": [],         // "large" o "ga": a chi va di solito (vedi sotto)
+  "contact": false,          // con pontile: preferito per i passeggeri  ← da completare
+  "uses": [],                // vuoto = qualsiasi uso; altrimenti pax, cargo, ga, mil
+  "airlines": [],            // compagnie preferenziali (prefisso ICAO)   ← da completare
+  "blocks": [],              // MARS: occupando questo, quelli diventano inagibili ← da completare
   "disabled": false
 }
 ```
@@ -87,7 +108,7 @@ Per un tipo che non ha in tabella ricade sulla lettera di codice, che è meno pr
 
 **Le rotazioni contano come una sola occupazione.** Se un aereo atterra alle 14:10 e riparte
 alle 15:40, lo stand è impegnato tutto quel tempo, senza buchi. L'abbinamento fra arrivo e
-partenza avviene per marche (`REG/` nei remarks) o per callsign, entro una finestra di 8 ore.
+partenza avviene entro una finestra di 8 ore; come si riconosce è spiegato più sotto.
 
 Un arrivo di cui non si conosce la ripartenza occupa per la sosta predefinita (90 minuti). Una
 partenza senza arrivo abbinato occupa da un'ora prima dell'off-blocks.
@@ -108,11 +129,12 @@ Il controllo sul tipo si ammorbidisce quando uno dei due non è in catalogo: nel
 capitano refusi (un B738 ripartito come "B378") e rifiutare l'abbinamento per quello produrrebbe
 un conflitto inventato al posto di una rotazione reale.
 
-**L'ordine delle decisioni.** Prima si posa quello che è già deciso — assegnazioni manuali,
-poi la posizione reale letta da Aurora, poi le prenotazioni — perché sono vincoli. Il resto
-viene assegnato in ordine di arrivo scegliendo, fra gli stand compatibili e liberi, quello con
-il punteggio migliore: compagnia di casa, conferma del piano precedente, misura giusta senza
-sprecare uno stand grande, pontile per i passeggeri, e gli stand MARS tenuti per ultimi perché
+**L'ordine delle decisioni.** Prima si posa quello che è già deciso, perché sono vincoli:
+chi è fisicamente fermo su uno stand, poi le assegnazioni fatte a mano, poi le prenotazioni. Il
+resto viene assegnato in ordine di arrivo scegliendo, fra gli stand compatibili e liberi, quello
+con il punteggio migliore. Il punteggio è a strati, dal più pesante: stand della compagnia,
+conferma del piano precedente, stand riservati, ordine di comodità, e solo dentro lo stesso
+gruppo lo spazio sprecato, il pontile per i passeggeri e gli stand MARS tenuti per ultimi perché
 occuparne uno ne brucia altri.
 
 **Lo stand già deciso vince sulle misure.** Se la prenotazione dice stand 12, l'aereo va sullo
@@ -129,7 +151,7 @@ stand erano troppo piccoli, quanti occupati, quanti bloccati da un MARS adiacent
 
 ### Il piazzale vero comanda sul piano
 
-Ogni 20 secondi l'app guarda chi è **fermo** su quale stand. La fonte principale è Aurora:
+Ogni 15 secondi l'app ricalcola il piano e guarda chi è **fermo** su quale stand. La fonte principale è Aurora:
 il campo 17 di `#TRPOS` è lo stand che Aurora stesso calcola sul suo file dei gate, e si svuota
 appena l'aereo fa pushback. Quando Aurora non c'è o non vede l'aereo, fa da riserva Whazzup:
 dalla posizione si ricava lo stand più vicino con le coordinate di `lirn.gts`, entro 40 metri.
@@ -200,7 +222,7 @@ scritture sono condizionate alla versione (`If-Match`), e se due postazioni scri
 stesso istante la seconda riceve `409`, riapplica la sua modifica sulla versione nuova e
 riprova. Le modifiche si sommano invece di cancellarsi a vicenda.
 
-In `secretsooking.json` di ogni postazione:
+In `secrets\booking.json` di ogni postazione:
 
 ```json
 "sharedStateUrl": "https://atc.it.ivao.aero/api/rfo/events/lirn-20260919/state",
@@ -216,7 +238,7 @@ alla prima connessione al server porta su le decisioni prese fin lì.
 
 Il pulsante **PM** su ogni riga (e **Solo PM** nel riquadro del traffico selezionato) manda al
 pilota un messaggio privato da Aurora con lo stand da aspettarsi. Prima dell'invio l'app
-mostra il testo esatto e chiede conferma. Il modello si cambia in `secretsooking.json`:
+mostra il testo esatto e chiede conferma. Il modello si cambia in `secrets\booking.json`:
 
 ```json
 "pilotMessageTemplate": "{callsign}, expect stand {stand} on arrival at Naples. Welcome to the RFO!"
@@ -294,3 +316,7 @@ src/RfoGateManager/
 
 Il motore di allocazione non conosce né HTTP né Aurora: prende stand e richieste, restituisce
 assegnazioni con la motivazione. È la parte coperta dai test.
+
+Altri documenti: [`docs/SYNC-API.md`](docs/SYNC-API.md) è il contratto del server di
+sincronizzazione; [`CLAUDE.md`](CLAUDE.md) raccoglie convenzioni, trappole note e lavoro
+aperto per chi riprende il progetto.
