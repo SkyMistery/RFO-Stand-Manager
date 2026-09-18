@@ -42,8 +42,10 @@ Argomenti da riga di comando: `--no-browser`, `--port=5099`.
 (AD 2 LIRN 2-11 e 2-12, AIRAC 02 OCT 2025, dati GESAC): apron di appartenenza, lettera di
 codice, **apertura alare e lunghezza massima**.
 
-Il file `lirn.gts` del sector file Aurora è **facoltativo**: aggiunge le coordinate, che
-servono solo per disegnare il piazzale. Senza, l'assegnazione funziona lo stesso.
+Il file `lirn.gts` del sector file Aurora è **facoltativo** ma consigliato: aggiunge le
+coordinate, che servono a riconoscere gli aerei parcheggiati quando Aurora non li vede. Senza,
+l'assegnazione funziona lo stesso. Non è nella repo, che è pubblica: copialo in `data\` dal
+settore italiano (`Include\IT\lirn.gts`). Nel `.gts` attuale manca lo stand 67.
 
 ```jsonc
 {
@@ -124,6 +126,36 @@ finestra, e va risolto.
 
 **Quando non trova niente, lo dice.** Nessun volo sparisce in silenzio: la riga riporta quanti
 stand erano troppo piccoli, quanti occupati, quanti bloccati da un MARS adiacente.
+
+### Il piazzale vero comanda sul piano
+
+Ogni 20 secondi l'app guarda chi è **fermo** su quale stand. La fonte principale è Aurora:
+il campo 17 di `#TRPOS` è lo stand che Aurora stesso calcola sul suo file dei gate, e si svuota
+appena l'aereo fa pushback. Quando Aurora non c'è o non vede l'aereo, fa da riserva Whazzup:
+dalla posizione si ricava lo stand più vicino con le coordinate di `lirn.gts`, entro 40 metri.
+Sui dati veri gli aerei parcheggiati stavano fra 3 e 19 metri dal punto dello stand, e uno appena
+spinto indietro a 64: la soglia distingue le due cose. Conta solo chi è entro 3 km da Capodichino,
+perché i nomi degli stand si ripetono fra aeroporti.
+
+Chi è fisicamente su uno stand passa davanti a tutto, anche alle prenotazioni e alle scelte a
+mano. Se lo stand di un arrivo è occupato da un aereo che è lì adesso, **all'arrivo ne viene dato
+un altro** invece di far spostare chi è a terra. La riga diventa azzurra con *riassegnato: 14
+occupato*; se lo stand perso era stato fissato a mano compare anche *da ricomunicare*, perché
+il pilota probabilmente lo sapeva già. Il sostituto rispetta le misure: la regola "lo stand
+deciso vince sulle misure" valeva per quello stand, non per quello che sceglie il programma.
+
+Un aereo fermo che non è nel piano diventa un occupante *non programmato*. Non sappiamo quando
+ripartirà, quindi tiene lo stand per una finestra di 60 minuti che scorre col tempo
+(`unscheduledOccupancyMinutes`): chi arriva entro quella finestra viene dirottato, chi arriva
+più tardi tiene il suo stand, perché magari l'intruso se ne sarà andato.
+
+Due prenotazioni che si sovrappongono restano invece un **conflitto**, in rosso: lì non c'è
+ancora nessuno a terra e decide il controllore.
+
+Il piano appena calcolato fa da ancora per il successivo, così gli ETA che cambiano a ogni
+aggiornamento di Whazzup non fanno saltare le scelte automatiche da uno stand all'altro: sui dati
+veri, quattro ricalcoli di fila senza nessun cambio. Quando uno stand cambia davvero compare in
+cima al piano, nell'elenco *Ultimi cambi di stand*, e con un avviso.
 
 **Parametri regolabili durante l'evento** senza ricompilare, via `GET`/`POST /api/options`:
 margine fra un occupante e il successivo (5 minuti, quanto basta per come il booking impacchetta

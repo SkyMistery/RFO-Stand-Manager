@@ -97,6 +97,33 @@ public sealed class WhazzupClient(HttpClient http, ILogger<WhazzupClient> log)
     }
 
     /// <summary>
+    /// Aerei fermi a terra entro un raggio dall'aeroporto, con o senza piano di volo. Chi si
+    /// piazza su uno stand senza prenotazione spesso non ha ancora depositato il piano: se
+    /// guardassimo solo i voli con destinazione o partenza qui, non lo vedremmo.
+    /// </summary>
+    public async Task<List<GroundTraffic>> GetParkedNearAsync(
+        double lat, double lon, double radiusMeters, CancellationToken ct = default)
+    {
+        var snap = await GetAsync(ct);
+        var list = new List<GroundTraffic>();
+        if (snap?.Clients?.Pilots is null) return list;
+
+        foreach (var p in snap.Clients.Pilots)
+        {
+            var t = p.LastTrack;
+            if (t is null || string.IsNullOrWhiteSpace(p.Callsign)) continue;
+            if (!t.OnGround || t.GroundSpeed is > 2) continue;
+            if (t.Latitude is not { } plat || t.Longitude is not { } plon) continue;
+            if (Domain.Occupancy.DistanceMeters(lat, lon, plat, plon) > radiusMeters) continue;
+
+            list.Add(new GroundTraffic(
+                p.Callsign.Trim().ToUpperInvariant(), plat, plon, p.FlightPlan?.AircraftId));
+        }
+
+        return list;
+    }
+
+    /// <summary>
     /// On-blocks stimato. In volo: distanza residua diviso ground speed, più il rullaggio.
     /// A terra prima del decollo: orario di partenza più tempo di volo previsto.
     /// </summary>
@@ -159,6 +186,8 @@ public sealed class WhazzupClient(HttpClient http, ILogger<WhazzupClient> log)
         return reg.Length is >= 3 and <= 10 ? reg.ToUpperInvariant() : null;
     }
 }
+
+public sealed record GroundTraffic(string Callsign, double Lat, double Lon, string? AircraftType);
 
 // --- Modello Whazzup (solo i campi che usiamo) ------------------------------------
 

@@ -107,7 +107,7 @@ app.MapGet("/api/status", () => Results.Ok(new
 app.MapGet("/api/plan", async (CancellationToken ct) =>
 {
     var s = await plan.RecomputeAsync(ct);
-    return Results.Ok(Present(s, shared.Current));
+    return Results.Ok(Present(s, shared.Current, plan.Changes));
 });
 
 app.MapPost("/api/plan/publish", async (CancellationToken ct) =>
@@ -120,14 +120,14 @@ app.MapPost("/api/pin", async (PinRequest body, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(body.Key)) return Results.BadRequest(new { error = "Chiave mancante." });
     await plan.PinAsync(body.Key, body.Stand, ct);
-    return Results.Ok(Present(plan.Snapshot, shared.Current));
+    return Results.Ok(Present(plan.Snapshot, shared.Current, plan.Changes));
 });
 
 app.MapPost("/api/stand/closed", async (StandClosedRequest body, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(body.Stand)) return Results.BadRequest(new { error = "Stand mancante." });
     await plan.SetStandClosedAsync(body.Stand, body.Closed, ct);
-    return Results.Ok(Present(plan.Snapshot, shared.Current));
+    return Results.Ok(Present(plan.Snapshot, shared.Current, plan.Changes));
 });
 
 // --- Sorgenti dati ----------------------------------------------------------------
@@ -325,7 +325,7 @@ static void OpenBrowser(string url, ILogger logger)
 }
 
 /// <summary>Proiezione del piano per la UI: i record di dominio restano interni.</summary>
-static object Present(PlanSnapshot s, SharedDocument doc)
+static object Present(PlanSnapshot s, SharedDocument doc, IReadOnlyList<StandChange> changes)
 {
     var byKey = s.Requests.ToDictionary(r => r.Key, StringComparer.OrdinalIgnoreCase);
 
@@ -336,6 +336,16 @@ static object Present(PlanSnapshot s, SharedDocument doc)
         conflicts = s.Conflicts,
         warnings = s.Warnings,
         sharedVersion = doc.Version,
+        occupants = s.Occupants.Select(o => new { callsign = o.Callsign, stand = o.StandId, source = o.Source }),
+        changes = changes.Take(30).Select(c => new
+        {
+            at = c.At,
+            key = c.Key,
+            callsign = c.Callsign,
+            from = c.FromStand,
+            to = c.ToStand,
+            reason = c.Reason,
+        }),
         stands = s.Stands.Select(st => new
         {
             id = st.Id,
@@ -375,6 +385,11 @@ static object Present(PlanSnapshot s, SharedDocument doc)
                 actualStand = r?.ActualStand,
                 source = r?.Inbound?.Source ?? r?.Outbound?.Source,
                 hasRotation = r?.Inbound is not null && r?.Outbound is not null,
+                reassigned = a.Reassigned,
+                displacedFrom = a.DisplacedFrom,
+                displacedBy = a.DisplacedBy,
+                wasPinned = a.WasPinned,
+                unscheduled = a.Unscheduled,
             };
         }),
     };

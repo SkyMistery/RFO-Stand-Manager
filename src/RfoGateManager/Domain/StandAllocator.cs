@@ -36,22 +36,39 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
         var occupancy = new Dictionary<string, List<Slot>>(StringComparer.OrdinalIgnoreCase);
         var results = new List<Assignment>();
 
-        // Fase 1: quello che è già deciso. Pin manuali, stand reali letti da Aurora, prenotazioni.
-        // Vanno posati per primi perché sono vincoli, non preferenze.
+        // Fase 1: quello che è già deciso, perché sono vincoli e non preferenze. Prima di tutto
+        // chi è fisicamente su uno stand: è un fatto, e nessun piano lo sposta. Poi le scelte
+        // a mano, poi le prenotazioni.
         var ordered = requests
-            .OrderByDescending(r => pinned.ContainsKey(r.Key) || r.Locked)
-            .ThenByDescending(r => r.ActualStand is not null)
+            .OrderByDescending(r => r.ActualStand is not null)
+            .ThenByDescending(r => pinned.ContainsKey(r.Key) || r.Locked)
             .ThenByDescending(r => r.BookedStand is not null)
             .ThenBy(r => r.From)
             .ToList();
 
         foreach (var req in ordered)
         {
-            var forced = Pick(pinned, req.Key) ?? req.ActualStand ?? req.BookedStand;
-
-            if (forced is not null)
+            if (req.ActualStand is not null)
             {
-                results.Add(AssignForced(occupancy, req, forced, pinned));
+                results.Add(AssignForced(occupancy, req, req.ActualStand, pinned, physical: true));
+                continue;
+            }
+
+            var pin = Pick(pinned, req.Key);
+            var decided = pin ?? req.BookedStand;
+
+            if (decided is not null)
+            {
+                // Lo stand deciso è occupato da un aereo che è lì adesso: invece di far spostare
+                // chi è già a terra, a questo ne diamo un altro.
+                if (_byId.TryGetValue(decided, out var decidedStand) &&
+                    PhysicalClash(occupancy, decidedStand, req) is { } occupant)
+                {
+                    results.Add(Reassign(occupancy, req, decided, occupant, wasPinned: pin is not null, previous));
+                    continue;
+                }
+
+                results.Add(AssignForced(occupancy, req, decided, pinned, physical: false));
                 continue;
             }
 
@@ -96,7 +113,8 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
         Dictionary<string, List<Slot>> occupancy,
         StandRequest req,
         string forced,
-        IReadOnlyDictionary<string, string> pinned)
+        IReadOnlyDictionary<string, string> pinned,
+        bool physical)
     {
         // Stand imposto ma sconosciuto nel .gts: lo segnaliamo invece di ignorarlo.
         if (!_byId.TryGetValue(forced, out var stand))
@@ -110,6 +128,7 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
                 To = req.To,
                 Conflict = true,
                 Manual = Pick(pinned, req.Key) is not null,
+                Unscheduled = req.Unscheduled,
                 Reason = $"Stand '{forced}' non presente nel file stand: impossibile verificarlo.",
             };
         }
@@ -117,7 +136,7 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
         var free = IsFree(occupancy, stand, req, out var clashKey);
         var fits = Fits(stand, req, out _);
 
-        Occupy(occupancy, stand.Id, req);
+        Occupy(occupancy, stand.Id, req, physical);
 
         return new Assignment
         {
@@ -130,8 +149,90 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
             Conflict = !free,
             Oversize = !fits,
             Manual = Pick(pinned, req.Key) is not null,
+            Unscheduled = req.Unscheduled,
             Reason = BuildForcedReason(req, pinned, free, fits, clashKey, stand),
         };
+    }
+
+    /// <summary>
+    /// Trova un altro stand per chi ha trovato il suo occupato. La scelta segue le regole
+    /// normali, misure comprese: "lo stand deciso vince sulle misure" valeva per quello
+    /// stand, non per il sostituto che scegliamo noi.
+    /// </summary>
+    private Assignment Reassign(
+        Dictionary<string, List<Slot>> occupancy,
+        StandRequest req,
+        string lost,
+        string occupant,
+        bool wasPinned,
+        IReadOnlyDictionary<string, string> previous)
+    {
+        var what = wasPinned ? "fissato" : "prenotato";
+        var best = ChooseBest(occupancy, req, previous, out var why);
+
+        if (best is null)
+        {
+            return new Assignment
+            {
+                Key = req.Key,
+                Callsign = req.Callsign,
+                StandId = null,
+                From = req.From,
+                To = req.To,
+                Conflict = true,
+                Reassigned = true,
+                DisplacedFrom = lost,
+                DisplacedBy = occupant,
+                WasPinned = wasPinned,
+                Reason = $"Stand {what} {lost} occupato da {occupant}, e nessun altro è libero. {why}",
+            };
+        }
+
+        Occupy(occupancy, best.Id, req);
+
+        var tail = wasPinned ? ", da ricomunicare al pilota. " : ". ";
+        return new Assignment
+        {
+            Key = req.Key,
+            Callsign = req.Callsign,
+            StandId = best.Id,
+            From = req.From,
+            To = req.To,
+            Reassigned = true,
+            DisplacedFrom = lost,
+            DisplacedBy = occupant,
+            WasPinned = wasPinned,
+            Reason = $"Stand {what} {lost} occupato da {occupant}: riassegnato a {best.Id}{tail}{why}",
+        };
+    }
+
+    /// <summary>
+    /// Chi occupa fisicamente lo stand (o uno stand MARS che lo blocca) nella finestra della
+    /// richiesta. Le sole prenotazioni non contano: lì non c'è ancora nessuno da spostare.
+    /// </summary>
+    private string? PhysicalClash(Dictionary<string, List<Slot>> occupancy, Stand stand, StandRequest req)
+    {
+        var buffer = TimeSpan.FromMinutes(options.BufferMinutes);
+
+        var ids = new List<string> { stand.Id };
+        if (_blocks.TryGetValue(stand.Id, out var neighbours)) ids.AddRange(neighbours);
+
+        foreach (var id in ids)
+        {
+            if (!occupancy.TryGetValue(id, out var slots)) continue;
+
+            foreach (var s in slots)
+            {
+                if (!s.Physical || s.Key == req.Key) continue;
+                if (!Overlaps(s.From, s.To, req.From, req.To, buffer)) continue;
+
+                return id.Equals(stand.Id, StringComparison.OrdinalIgnoreCase)
+                    ? s.Callsign
+                    : $"{s.Callsign} (sullo stand MARS {id})";
+            }
+        }
+
+        return null;
     }
 
     private Stand? ChooseBest(
@@ -313,19 +414,20 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
         => aFrom - buffer < bTo && bFrom - buffer < aTo;
 
     private static void Occupy(
-        Dictionary<string, List<Slot>> occupancy, string standId, StandRequest req)
+        Dictionary<string, List<Slot>> occupancy, string standId, StandRequest req, bool physical = false)
     {
         if (!occupancy.TryGetValue(standId, out var list))
             occupancy[standId] = list = [];
-        list.Add(new Slot(req.From, req.To, req.Key));
+        list.Add(new Slot(req.From, req.To, req.Key, req.Callsign, physical));
     }
 
     private static string BuildForcedReason(
         StandRequest req, IReadOnlyDictionary<string, string> pinned,
         bool free, bool fits, string clashKey, Stand stand)
     {
-        var origin = Pick(pinned, req.Key) is not null ? "Imposto a mano"
-                   : req.ActualStand is not null ? "Posizione reale letta da Aurora"
+        var origin = req.Unscheduled ? "Non programmato, fermo"
+                   : req.ActualStand is not null ? "A terra, fermo"
+                   : Pick(pinned, req.Key) is not null ? "Imposto a mano"
                    : "Da prenotazione";
 
         var parts = new List<string> { $"{origin} su {stand.Id}" };
@@ -381,5 +483,6 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
         return map;
     }
 
-    private readonly record struct Slot(DateTimeOffset From, DateTimeOffset To, string Key);
+    /// <param name="Physical">L'aereo è su questo stand adesso, non solo in programma.</param>
+    private readonly record struct Slot(DateTimeOffset From, DateTimeOffset To, string Key, string Callsign, bool Physical);
 }

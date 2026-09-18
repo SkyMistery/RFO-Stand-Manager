@@ -2,6 +2,7 @@
 
 const state = {
   plan: null,
+  seenChanges: null,
   status: null,
   filter: '',
   selected: null,
@@ -198,6 +199,8 @@ function renderPlan() {
     w.hidden = true;
   }
 
+  renderChanges(p.changes ?? []);
+
   const rows = visibleRows();
   const body = $('planBody');
 
@@ -216,12 +219,15 @@ function renderPlan() {
       a.hasRotation ? '<span class="badge">rotazione</span>' : '',
       a.conflict ? '<span class="badge conflict">conflitto</span>' : '',
       a.oversize ? '<span class="badge oversize">fuori misura</span>' : '',
+      a.unscheduled ? '<span class="badge oversize">non programmato</span>' : '',
+      a.reassigned ? `<span class="badge moved">riassegnato: ${esc(a.displacedFrom)} occupato</span>` : '',
+      a.reassigned && a.wasPinned ? '<span class="badge conflict">da ricomunicare</span>' : '',
       a.distanceNm ? `<span class="badge">${Math.round(a.distanceNm)} NM</span>` : '',
     ].filter(Boolean).join(' ');
 
     const route = `${esc(a.origin || '····')} → ${esc(a.destination || '····')}`;
 
-    const rowClass = a.conflict ? 'conflict' : a.oversize ? 'oversize' : '';
+    const rowClass = a.conflict ? 'conflict' : a.reassigned ? 'moved' : a.oversize ? 'oversize' : '';
 
     return `<tr class="${rowClass}">
       <td class="cs">${hhmm(a.from)}–${hhmm(a.to)}</td>
@@ -236,7 +242,7 @@ function renderPlan() {
           <button class="btn btn-small" data-act="show" data-cs="${esc(a.callsign)}">Mostra</button>
           <button class="btn btn-small btn-primary" data-act="assign"
                   data-cs="${esc(a.callsign)}" data-stand="${esc(a.stand || '')}"
-                  data-key="${esc(a.key)}" ${a.stand ? '' : 'disabled'}>Assegna</button>
+                  data-key="${esc(a.key)}" ${a.stand && !a.unscheduled ? '' : 'disabled'}>Assegna</button>
         </div>
       </td>
     </tr>`;
@@ -250,6 +256,36 @@ function renderPlan() {
   });
 
   renderGantt();
+}
+
+// --- Cambi di stand ---------------------------------------------------------
+
+function renderChanges(changes) {
+  const el = $('changes');
+
+  // Al primo caricamento non avvisiamo: quei cambi c'erano già prima di aprire la pagina.
+  const fresh = state.seenChanges === null
+    ? []
+    : changes.filter((c) => !state.seenChanges.has(c.at + c.key));
+  state.seenChanges = new Set(changes.map((c) => c.at + c.key));
+
+  if (fresh.length === 1) {
+    const c = fresh[0];
+    toast(`${c.callsign}: stand ${c.from ?? '—'} → ${c.to ?? 'nessuno'}`, 'bad');
+  } else if (fresh.length > 1) {
+    toast(`${fresh.length} stand cambiati: guarda l'elenco in cima al piano.`, 'bad');
+  }
+
+  if (!changes.length) { el.hidden = true; return; }
+
+  el.hidden = false;
+  el.innerHTML = `<div class="changes-title">Ultimi cambi di stand</div><ul>${changes.slice(0, 8).map((c) => `
+    <li>
+      <span class="cs">${hhmm(c.at)}Z</span>
+      <span class="cs">${esc(c.callsign)}</span>
+      <span class="stand-cell">${esc(c.from ?? '—')} → ${esc(c.to ?? 'nessuno')}</span>
+      <span class="muted">${esc(c.reason)}</span>
+    </li>`).join('')}</ul>`;
 }
 
 // --- Gantt ------------------------------------------------------------------
@@ -297,7 +333,11 @@ function renderGantt() {
       const bars = (byStand.get(s.id) ?? []).map((a) => {
         const left = Math.max(0, pct(a.from));
         const right = Math.min(100, pct(a.to));
-        const cls = a.conflict ? 'conflict' : a.oversize ? 'oversize' : a.pinned ? 'pinned' : '';
+        const cls = a.conflict ? 'conflict'
+                  : a.unscheduled ? 'unscheduled'
+                  : a.reassigned ? 'moved'
+                  : a.oversize ? 'oversize'
+                  : a.pinned ? 'pinned' : '';
         return `<div class="gantt-bar ${cls}" style="left:${left}%;width:${Math.max(right - left, 1.2)}%"
                      title="${esc(a.callsign)} ${hhmm(a.from)}–${hhmm(a.to)}Z — ${esc(a.reason)}">${esc(a.callsign)}</div>`;
       }).join('');

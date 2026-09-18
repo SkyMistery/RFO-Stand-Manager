@@ -7,3 +7,6 @@ secrets/*.json
 !secrets/*.example.json
 state.local.json
 dist/
+
+# File del settore italiano: restano in locale, la repo e pubblica
+data/*.gts

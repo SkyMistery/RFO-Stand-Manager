@@ -177,7 +177,7 @@ public class StandAllocatorTests
 
         var a = Assert.Single(result.Assignments);
         Assert.Equal("305", a.StandId);
-        Assert.Contains("Aurora", a.Reason);
+        Assert.Contains("A terra", a.Reason);
     }
 
     [Fact]

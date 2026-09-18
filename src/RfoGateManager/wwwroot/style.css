@@ -1,5 +1,6 @@
 :root {
   color-scheme: dark;
+  --moved: #39c5cf;
   --bg: #0e1116;
   --panel: #161b22;
   --panel-2: #1c232d;
@@ -208,10 +209,23 @@ tbody tr:hover { background: var(--panel-2); }
 .badge.pin { border-color: var(--pin); color: var(--pin); }
 .badge.conflict { border-color: var(--bad); color: var(--bad); }
 .badge.oversize { border-color: var(--warn); color: var(--warn); }
+.badge.moved { border-color: var(--moved); color: var(--moved); }
 .badge.booked { border-color: var(--accent); color: var(--accent); }
 
 tr.conflict td { background: color-mix(in srgb, var(--bad) 12%, transparent); }
 tr.oversize td { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+tr.moved td { background: color-mix(in srgb, var(--moved) 12%, transparent); }
+
+.changes {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--moved) 8%, transparent);
+  font-size: 12.5px;
+}
+.changes-title { font-weight: 600; color: var(--moved); margin-bottom: 4px; }
+.changes ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+.changes li { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; }
+.changes .stand-cell { font-size: 13px; }
 
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
@@ -269,6 +283,11 @@ tr.oversize td { background: color-mix(in srgb, var(--warn) 12%, transparent); }
 }
 .gantt-bar.conflict { background: var(--bad); color: #fff; }
 .gantt-bar.oversize { background: var(--warn); color: #07101c; }
+.gantt-bar.moved { background: var(--moved); color: #07101c; }
+.gantt-bar.unscheduled {
+  background: repeating-linear-gradient(135deg, var(--warn) 0 6px, #b07d12 6px 12px);
+  color: #07101c;
+}
 .gantt-bar.pinned { background: var(--pin); color: #fff; }
 
 .gantt-axis {

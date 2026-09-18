@@ -108,6 +108,9 @@ public sealed record StandRequest
     public string? ActualStand { get; init; }
 
     public bool Locked { get; init; }
+
+    /// <summary>Aereo fermo su uno stand senza essere nel piano: arrivato senza prenotazione.</summary>
+    public bool Unscheduled { get; init; }
 }
 
 public sealed record Assignment
@@ -132,6 +135,26 @@ public sealed record Assignment
 
     public bool PushedToAurora { get; init; }
     public bool Manual { get; init; }
+
+    /// <summary>
+    /// Lo stand deciso (prenotato o fissato a mano) è occupato fisicamente da un altro aereo,
+    /// quindi a questo ne è stato dato un altro invece di far spostare chi è già a terra.
+    /// </summary>
+    public bool Reassigned { get; init; }
+
+    /// <summary>Lo stand che avrebbe dovuto avere.</summary>
+    public string? DisplacedFrom { get; init; }
+
+    /// <summary>Chi lo occupa.</summary>
+    public string? DisplacedBy { get; init; }
+
+    /// <summary>
+    /// Lo stand perso era stato fissato a mano, quindi probabilmente già comunicato al pilota:
+    /// il nuovo va ricomunicato.
+    /// </summary>
+    public bool WasPinned { get; init; }
+
+    public bool Unscheduled { get; init; }
 }
 
 public sealed record AllocationOptions
@@ -159,4 +182,11 @@ public sealed record AllocationOptions
     public int RotationWindowHours { get; init; } = 8;
 
     public bool PreferContactStands { get; init; } = true;
+
+    /// <summary>
+    /// Per quanto si considera occupato uno stand da un aereo di cui non si sa quando ripartirà.
+    /// La finestra scorre: finché l'aereo resta lì, ogni ricalcolo la sposta in avanti. Gli
+    /// arrivi che cadono dentro questa finestra vengono dirottati su un altro stand.
+    /// </summary>
+    public int UnscheduledOccupancyMinutes { get; init; } = 60;
 }

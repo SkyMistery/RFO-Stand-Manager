@@ -5,6 +5,15 @@ using RfoGateManager.Sync;
 
 namespace RfoGateManager.Services;
 
+/// <summary>Uno stand che cambia fra un ricalcolo e l'altro. Il controllore deve saperlo.</summary>
+public sealed record StandChange(
+    DateTimeOffset At,
+    string Key,
+    string Callsign,
+    string? FromStand,
+    string? ToStand,
+    string Reason);
+
 public sealed record PlanSnapshot
 {
     public DateTimeOffset GeneratedAt { get; init; }
@@ -12,6 +21,7 @@ public sealed record PlanSnapshot
     public IReadOnlyList<StandRequest> Requests { get; init; } = [];
     public IReadOnlyList<Assignment> Assignments { get; init; } = [];
     public IReadOnlyList<string> Warnings { get; init; } = [];
+    public IReadOnlyList<PhysicalOccupant> Occupants { get; init; } = [];
     public int Unassigned { get; init; }
     public int Conflicts { get; init; }
 }
@@ -33,8 +43,14 @@ public sealed class PlanService
     private StandCatalogResult _catalog = new();
     private List<FlightLeg> _bookingLegs = [];
     private List<FlightLeg> _manualLegs = [];
-    private readonly Dictionary<string, string> _actualStands = new(StringComparer.OrdinalIgnoreCase);
     private PlanSnapshot _snapshot = new();
+    private readonly List<StandChange> _changes = [];
+
+    /// <summary>Entro questo raggio dall'ARP un aereo fermo conta come parcheggiato qui.</summary>
+    private const double AirportRadiusMeters = 3000;
+
+    /// <summary>Distanza massima fra un aereo e il punto dello stand per dire che è su quello stand.</summary>
+    private const double StandMatchMeters = 40;
 
     public PlanService(
         AppConfig config, BookingClient booking, WhazzupClient whazzup,
@@ -52,6 +68,12 @@ public sealed class PlanService
     public PlanSnapshot Snapshot => _snapshot;
     public StandCatalogResult Catalog => _catalog;
     public BookingFetchResult? LastBookingResult { get; private set; }
+
+    /// <summary>Gli ultimi cambi di stand, dal più recente.</summary>
+    public IReadOnlyList<StandChange> Changes
+    {
+        get { lock (_changes) return _changes.AsEnumerable().Reverse().ToList(); }
+    }
 
     public string DataDirectory => AppPaths.Data;
 
@@ -111,13 +133,10 @@ public sealed class PlanService
 
             var legs = MergeLegs(_bookingLegs, live, _manualLegs);
 
-            await EnrichWithAuroraAsync(legs, ct);
+            var occupants = await DetectOccupantsAsync(ct);
 
-            var requests = RotationBuilder.Build(legs, _config.Airport, Options, now)
-                .Select(r => _actualStands.TryGetValue(r.Callsign, out var actual)
-                    ? r with { ActualStand = actual }
-                    : r)
-                .ToList();
+            var requests = Occupancy.Apply(
+                RotationBuilder.Build(legs, _config.Airport, Options, now), occupants, now, Options);
 
             var doc = _shared.Shared ? await _shared.PullAsync(ct) : _shared.Current;
 
@@ -129,8 +148,16 @@ public sealed class PlanService
                         : s)
                     .ToList();
 
+            // Il piano appena calcolato è l'ancora del prossimo: senza, gli ETA che cambiano a
+            // ogni giro di Whazzup farebbero ballare le scelte automatiche da uno stand all'altro.
+            var previous = new Dictionary<string, string>(doc.Plan, StringComparer.OrdinalIgnoreCase);
+            foreach (var a in _snapshot.Assignments)
+                if (a.StandId is not null) previous[a.Key] = a.StandId;
+
             var allocator = new StandAllocator(stands, Options);
-            var result = allocator.Allocate(requests, now, previous: doc.Plan, pinned: doc.Pins);
+            var result = allocator.Allocate(requests, now, previous: previous, pinned: doc.Pins);
+
+            RecordChanges(_snapshot, result.Assignments, now);
 
             _snapshot = new PlanSnapshot
             {
@@ -139,6 +166,7 @@ public sealed class PlanService
                 Requests = result.Requests,
                 Assignments = result.Assignments,
                 Warnings = warnings,
+                Occupants = occupants,
                 Unassigned = result.Unassigned,
                 Conflicts = result.Conflicts,
             };
@@ -204,39 +232,96 @@ public sealed class PlanService
     }
 
     /// <summary>
-    /// Chiede ad Aurora dove si trovano davvero gli aerei in raggio radar. Il campo 17 di
-    /// #TRPOS è la verità sul piazzale: un aereo già parcheggiato non va spostato.
+    /// Chi è fermo su quale stand, adesso. Prima Aurora: il campo 17 di #TRPOS è lo stand
+    /// calcolato da Aurora stesso sul suo file dei gate, ed è la fonte migliore. Poi Whazzup,
+    /// per gli aerei che Aurora non vede o quando Aurora non c'è: dalla posizione ricaviamo lo
+    /// stand più vicino con le coordinate del .gts.
+    ///
+    /// Conta solo chi è fermo. Il campo "stand assegnato" non conta: dice dove andrà, non dove
+    /// è, e usarlo farebbe occupare lo stand a un aereo che sta ancora rullando.
     /// </summary>
-    private async Task EnrichWithAuroraAsync(List<FlightLeg> legs, CancellationToken ct)
+    private async Task<List<PhysicalOccupant>> DetectOccupantsAsync(CancellationToken ct)
     {
-        if (!_aurora.IsConnected) return;
+        var found = new Dictionary<string, PhysicalOccupant>(StringComparer.OrdinalIgnoreCase);
+        var known = _catalog.Stands.Select(s => s.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        try
+        if (_aurora.IsConnected)
         {
-            var inRange = await _aurora.GetTrafficInRangeAsync(ct);
-            var interesting = legs.Select(l => l.Callsign).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var cs in inRange.Where(interesting.Contains))
+            try
             {
-                try
+                foreach (var cs in await _aurora.GetTrafficInRangeAsync(ct))
                 {
-                    var pos = await _aurora.GetTrafficPositionAsync(cs, ct);
-                    var stand = !string.IsNullOrWhiteSpace(pos.CurrentGate) ? pos.CurrentGate
-                              : !string.IsNullOrWhiteSpace(pos.AssignedGate) ? pos.AssignedGate
-                              : null;
+                    try
+                    {
+                        var pos = await _aurora.GetTrafficPositionAsync(cs, ct);
+                        if (!pos.OnGround || pos.GroundSpeed > 3) continue;
+                        if (string.IsNullOrWhiteSpace(pos.CurrentGate) || !known.Contains(pos.CurrentGate)) continue;
 
-                    if (stand is not null && pos.OnGround) _actualStands[cs] = stand;
-                    else _actualStands.Remove(cs);
-                }
-                catch (AuroraException ex)
-                {
-                    _log.LogDebug("Posizione di {Callsign} non disponibile: {Error}", cs, ex.Message);
+                        // Lo stand "12" esiste anche altrove: conta solo se l'aereo è qui.
+                        if (Occupancy.DistanceMeters(_config.AirportLat, _config.AirportLon,
+                                pos.Latitude, pos.Longitude) > AirportRadiusMeters) continue;
+
+                        found[cs] = new PhysicalOccupant(cs.ToUpperInvariant(), pos.CurrentGate, "aurora");
+                    }
+                    catch (AuroraException ex)
+                    {
+                        _log.LogDebug("Posizione di {Callsign} non disponibile: {Error}", cs, ex.Message);
+                    }
                 }
             }
+            catch (Exception ex)
+            {
+                _log.LogDebug("Lettura del piazzale da Aurora saltata: {Error}", ex.Message);
+            }
         }
-        catch (Exception ex)
+
+        var withCoords = _catalog.Stands.Where(s => s.Lat != 0 || s.Lon != 0).ToList();
+        if (withCoords.Count > 0)
         {
-            _log.LogDebug("Arricchimento da Aurora saltato: {Error}", ex.Message);
+            try
+            {
+                var parked = await _whazzup.GetParkedNearAsync(
+                    _config.AirportLat, _config.AirportLon, AirportRadiusMeters, ct);
+
+                foreach (var g in parked.Where(g => !found.ContainsKey(g.Callsign)))
+                {
+                    var stand = Occupancy.NearestStand(g.Lat, g.Lon, withCoords, StandMatchMeters);
+                    if (stand is not null)
+                        found[g.Callsign] = new PhysicalOccupant(g.Callsign, stand, "whazzup", g.AircraftType);
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.LogDebug("Lettura del piazzale da Whazzup saltata: {Error}", ex.Message);
+            }
+        }
+
+        return found.Values.ToList();
+    }
+
+    /// <summary>
+    /// Confronta il piano nuovo col precedente e registra chi ha cambiato stand. Il primo
+    /// calcolo non produce cambi: non c'è niente con cui confrontarlo.
+    /// </summary>
+    private void RecordChanges(PlanSnapshot before, IReadOnlyList<Assignment> after, DateTimeOffset now)
+    {
+        if (before.Assignments.Count == 0) return;
+
+        var old = before.Assignments.ToDictionary(a => a.Key, StringComparer.OrdinalIgnoreCase);
+
+        lock (_changes)
+        {
+            foreach (var a in after)
+            {
+                if (!old.TryGetValue(a.Key, out var prev)) continue;
+                if (string.Equals(prev.StandId, a.StandId, StringComparison.OrdinalIgnoreCase)) continue;
+
+                _changes.Add(new StandChange(now, a.Key, a.Callsign, prev.StandId, a.StandId, a.Reason));
+                _log.LogInformation("Stand cambiato: {Callsign} {From} -> {To}", a.Callsign,
+                    prev.StandId ?? "-", a.StandId ?? "-");
+            }
+
+            if (_changes.Count > 200) _changes.RemoveRange(0, _changes.Count - 200);
         }
     }
 

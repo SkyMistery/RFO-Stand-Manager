@@ -17,6 +17,15 @@ public sealed class AppConfig
 
     public string Airport { get; set; } = "LIRN";
 
+    /// <summary>
+    /// Punto di riferimento dell'aeroporto (ARP di Capodichino). Serve a capire se un aereo
+    /// fermo su "stand 12" è a Napoli: i nomi degli stand si ripetono fra aeroporti, e Aurora
+    /// riporta lo stand anche per gli aerei parcheggiati a Fiumicino.
+    /// </summary>
+    public double AirportLat { get; set; } = 40.8860;
+
+    public double AirportLon { get; set; } = 14.2908;
+
     /// <summary>URL dello stato condiviso fra controllori. Vuoto = modalità solo locale.</summary>
     public string SharedStateUrl { get; set; } = "";
 
