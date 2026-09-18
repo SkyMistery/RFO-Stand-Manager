@@ -164,6 +164,7 @@ input[type="search"], input[type="text"] {
 .selected-stand.off { color: var(--muted); font-size: 22px; }
 
 .selected-meta { flex: 1 1 260px; min-width: 200px; font-size: 13px; color: var(--muted); }
+.assume-warn { margin-top: 4px; color: var(--warn); }
 
 /* --- Tabella --- */
 

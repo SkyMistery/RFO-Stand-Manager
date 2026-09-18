@@ -214,6 +214,20 @@ app.MapGet("/api/aurora/selected", async (CancellationToken ct) =>
         var assignment = snapshot.Assignments
             .FirstOrDefault(a => a.Callsign.Equals(callsign, StringComparison.OrdinalIgnoreCase));
 
+        // Aurora accetta #LBGTE solo sul traffico assunto da chi lo manda: meglio dirlo
+        // prima che il controllore clicchi e riceva un rifiuto.
+        string? assumedBy = null;
+        string? me = null;
+        try
+        {
+            assumedBy = (await aurora.GetTrafficPositionAsync(callsign, ct)).AssumedStation;
+            me = await aurora.GetConnectedCallsignAsync(ct);
+        }
+        catch (AuroraException) { /* informazione accessoria: senza, si prova comunque */ }
+
+        var assumedByMe = !string.IsNullOrWhiteSpace(assumedBy) && me is not null &&
+                          assumedBy.Equals(me, StringComparison.OrdinalIgnoreCase);
+
         return Results.Ok(new
         {
             callsign,
@@ -225,6 +239,8 @@ app.MapGet("/api/aurora/selected", async (CancellationToken ct) =>
                      ?? $"{callsign} non arriva né parte da {config.Airport}: nessuno stand da assegnare.",
             conflict = assignment?.Conflict ?? false,
             oversize = assignment?.Oversize ?? false,
+            assumedBy = string.IsNullOrWhiteSpace(assumedBy) ? null : assumedBy,
+            assumedByMe,
         });
     }
     catch (AuroraException ex)

@@ -157,6 +157,15 @@ per tutti. Senza URL l'app lavora da sola e salva lo stato in `state.local.json`
 | `api.ivao.aero/v2/tracker/whazzup` | tutti i voli online, posizione e distanza | pubblico, nessuna chiave, ~15 s |
 | Aurora TCP `127.0.0.1:1130` | selezione, posizione reale, assegnazione | va abilitato in Aurora |
 
+**Aurora accetta lo stand solo su un traffico assunto da te.** Su un traffico non assunto
+`#LBGTE` viene rifiutato con `Traffic not assumed` e non scrive nulla. Quando selezioni un aereo
+l'app legge chi l'ha assunto (`#TRPOS` campo 12) e te lo dice prima che tu provi ad assegnare.
+Per questo all'evento lo stand lo assegna chi ha il traffico in carico in quel momento.
+
+Collaudato su Aurora vero, e il manuale sbaglia in quattro punti: `#CONN` e `#CTRLRWY` rispondono
+col proprio nome e non con `#CTRL`; nel piano di volo (`#FP`) i campi 7 e 8 sono invertiti (prima
+le regole, poi il tipo); gli errori arrivano come `@ERR;#COMANDO;argomenti;messaggio` e non con `$`.
+
 Comandi Aurora usati: `#SELTFC` (traffico selezionato), `#TRPOS` (campo 17 = stand reale),
 `#TR` (traffico in raggio radar), `#LBGTE` (assegna lo stand), `#MSGPM` (avvisa il pilota),
 `#ZSTR` (mostra il volo in Aurora).

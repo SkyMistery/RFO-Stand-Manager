@@ -264,12 +264,25 @@ public sealed class AuroraClient : IAsyncDisposable
 
     private void Dispatch(string line)
     {
-        // '$' = messaggio di errore, '#' = messaggio di comunicazione.
-        if (line.StartsWith('$') || line.Contains("@ERR", StringComparison.OrdinalIgnoreCase))
+        // Gli errori arrivano come "@ERR;#COMANDO;argomenti...;messaggio" (il manuale parla
+        // di '$', ma Aurora manda questo). Il nome del comando ci dice a quale richiesta
+        // appartiene l'errore, cosi' non lo attribuiamo alla richiesta sbagliata.
+        if (line.StartsWith('$') || line.StartsWith("@ERR", StringComparison.OrdinalIgnoreCase))
         {
-            LastError = line.TrimStart('$');
             _log.LogWarning("Aurora ha risposto con un errore: {Line}", line);
-            FailOldestPending(LastError);
+
+            var parts = line.Split(';');
+            var failed = parts.Length > 1 && parts[1].StartsWith('#')
+                ? parts[1][1..].Trim().ToUpperInvariant()
+                : null;
+            var message = Explain(parts.Length > 1 ? parts[^1].Trim() : line, parts);
+
+            LastError = message;
+
+            if (failed is not null && _pending.TryGetValue(failed, out var q) && q.TryDequeue(out var target))
+                target.TrySetException(new AuroraException(message));
+            else
+                FailOldestPending(message);
             return;
         }
 
@@ -300,6 +313,18 @@ public sealed class AuroraClient : IAsyncDisposable
         {
             _log.LogDebug("Risposta Aurora senza richiesta in attesa: {Line}", line);
         }
+    }
+
+    /// <summary>Traduce gli errori noti di Aurora in qualcosa che dica al controllore cosa fare.</summary>
+    private static string Explain(string message, string[] parts)
+    {
+        // parts: @ERR ; #COMANDO ; CALLSIGN ; ... ; messaggio
+        var callsign = parts.Length > 2 ? parts[2].Trim() : "il traffico";
+
+        if (message.Contains("not assumed", StringComparison.OrdinalIgnoreCase))
+            return $"Aurora accetta lo stand solo su un traffico assunto da te: assumi {callsign} e riprova.";
+
+        return $"Aurora ha rifiutato il comando: {message}";
     }
 
     private void FailOldestPending(string error)

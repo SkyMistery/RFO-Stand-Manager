@@ -146,7 +146,14 @@ function renderSelected(r) {
     <div class="selected-grid">
       <div class="selected-callsign">${esc(r.callsign)}</div>
       <div class="${standClass}">${standText}</div>
-      <div class="selected-meta">${esc(r.reason || '')}</div>
+      <div class="selected-meta">
+        ${esc(r.reason || '')}
+        ${r.inPlan && !r.assumedByMe
+          ? `<div class="assume-warn">${r.assumedBy
+              ? `Assunto da ${esc(r.assumedBy)}: Aurora accetterà lo stand solo da chi l'ha assunto.`
+              : 'Non assunto: assumilo in Aurora prima di assegnare lo stand.'}</div>`
+          : ''}
+      </div>
       <div class="actions">
         <input type="text" id="selStand" value="${esc(r.suggestion || '')}" placeholder="stand">
         <label class="toggle"><input type="checkbox" id="selPm"> <span>avvisa il pilota</span></label>
