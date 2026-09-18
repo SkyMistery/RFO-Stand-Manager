@@ -165,19 +165,55 @@ gli slot), sosta predefinita, rullaggio, finestra di rotazione.
 
 ## Stato condiviso fra controllori
 
-Se DEL, GND e TWR usano ciascuno la propria copia dell'app, le assegnazioni divergono e due
-posizioni mandano due aerei sullo stesso stand.
+Se DEL, GND e TWR usano ciascuno la propria copia dell'app, le decisioni devono essere le
+stesse per tutti: stand fissati a mano, stand chiusi, piloti avvisati, partenze che hanno
+chiamato. Le postazioni condividono un documento per evento su un server che fa da ponte
+(atc.it.ivao.aero). Il contratto è in [`docs/SYNC-API.md`](docs/SYNC-API.md), con schema MySQL
+e un'implementazione di riferimento in ASP.NET.
 
-In `tools\state.php` c'è un endpoint da caricare su un qualsiasi spazio PHP raggiungibile.
-Cambia il token in testa al file, poi su ogni postazione metti in `secrets\booking.json`:
+In breve: ogni 3 secondi l'app chiede se è cambiato qualcosa (se no, `304` senza corpo); le
+scritture sono condizionate alla versione (`If-Match`), e se due postazioni scrivono nello
+stesso istante la seconda riceve `409`, riapplica la sua modifica sulla versione nuova e
+riprova. Le modifiche si sommano invece di cancellarsi a vicenda.
+
+In `secretsooking.json` di ogni postazione:
 
 ```json
-"sharedStateUrl": "https://tuodominio/state.php?event=lirn20260919",
-"sharedStateToken": "lo-stesso-token"
+"sharedStateUrl": "https://atc.it.ivao.aero/api/rfo/events/lirn-20260919/state",
+"sharedStateToken": "<chiave>"
 ```
 
-Da quel momento le assegnazioni manuali, gli stand chiusi e il piano pubblicato sono gli stessi
-per tutti. Senza URL l'app lavora da sola e salva lo stato in `state.local.json`.
+Senza URL l'app lavora da sola e salva lo stato in `state.local.json`, nello stesso formato:
+alla prima connessione al server porta su le decisioni prese fin lì.
+
+---
+
+## Messaggio al pilota
+
+Il pulsante **PM** su ogni riga (e **Solo PM** nel riquadro del traffico selezionato) manda al
+pilota un messaggio privato da Aurora con lo stand da aspettarsi. Prima dell'invio l'app
+mostra il testo esatto e chiede conferma. Il modello si cambia in `secretsooking.json`:
+
+```json
+"pilotMessageTemplate": "{callsign}, expect stand {stand} on arrival at Naples. Welcome to the RFO!"
+```
+
+Chi è stato avvisato viene scritto nello stato condiviso: la riga mostra *pilota avvisato*, e
+se poi lo stand cambia diventa *da ricomunicare (detto 14)*, su tutte le postazioni.
+
+---
+
+## Strippiera partenze
+
+Le partenze da Napoli in ordine di EOBT, divise in **Da chiamare** e **Hanno chiamato**. Ogni
+strip mostra stand, destinazione, se il pilota è connesso, chi l'ha assunto e quanto manca
+all'EOBT (in rosso se è passato).
+
+"Ha chiamato" l'app non lo può sentire, quindi lo deduce: un traffico assunto in Aurora ha
+chiamato, perché DEL o GND lo assumono quando il pilota si fa vivo. Il pulsante sposta la
+strip a mano, e la scelta manuale vince sulla deduzione in tutti e due i sensi ed è condivisa
+fra le postazioni; **auto** la toglie e torna alla deduzione. Chi è già in volo esce dalla
+strippiera.
 
 ---
 

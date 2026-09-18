@@ -229,6 +229,56 @@ tr.moved td { background: color-mix(in srgb, var(--moved) 12%, transparent); }
 
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
+/* --- Strippiera --- */
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 12px;
+  padding: 12px 16px 16px;
+}
+
+.board-col h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+}
+
+.count {
+  display: inline-block;
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  text-align: center;
+  color: var(--text);
+}
+
+.strips { display: grid; gap: 6px; max-height: 460px; overflow-y: auto; }
+.strip-empty { margin: 4px 0; font-size: 12.5px; }
+
+.strip {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+}
+.strip.called { border-left-color: var(--ok); }
+.strip.offline { opacity: .6; }
+
+.strip-time { font-size: 18px; font-weight: 700; }
+.strip-cs { font-size: 15px; margin-right: 6px; }
+.strip-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.strip-actions { display: flex; flex-direction: column; gap: 4px; }
+
 /* --- Avvisi --- */
 
 .warnings {

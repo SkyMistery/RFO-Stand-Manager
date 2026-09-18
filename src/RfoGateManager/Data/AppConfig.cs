@@ -39,8 +39,20 @@ public sealed class AppConfig
 
     public bool OpenBrowserOnStart { get; set; } = true;
 
+    /// <summary>
+    /// Il PM che riceve il pilota. Segnaposto: {callsign}, {stand}, {airport}. In inglese
+    /// perché all'RFO arrivano piloti da tutto il mondo. Il ';' non è ammesso da Aurora e
+    /// viene sostituito da una virgola.
+    /// </summary>
+    public string PilotMessageTemplate { get; set; } =
+        "{callsign}, expect stand {stand} on arrival at Naples. Welcome to the RFO!";
+
     /// <summary>Nome operatore, per sapere chi ha fatto cosa nello stato condiviso.</summary>
     public string Operator { get; set; } = Environment.UserName;
+
+    /// <summary>Il nome operatore non era configurato: lo prendiamo da Aurora appena connessi.</summary>
+    [JsonIgnore]
+    public bool OperatorFromAurora { get; private set; }
 
     [JsonIgnore]
     public bool HasBookingKey => !string.IsNullOrWhiteSpace(BookingXKey)
@@ -82,7 +94,13 @@ public sealed class AppConfig
     {
         try
         {
-            return JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(file), Options) ?? new AppConfig();
+            var c = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(file), Options) ?? new AppConfig();
+            if (string.IsNullOrWhiteSpace(c.Operator))
+            {
+                c.Operator = Environment.UserName;
+                c.OperatorFromAurora = true;
+            }
+            return c;
         }
         catch (Exception ex)
         {

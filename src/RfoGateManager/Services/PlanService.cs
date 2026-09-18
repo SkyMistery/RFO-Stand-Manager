@@ -46,6 +46,10 @@ public sealed class PlanService
     private PlanSnapshot _snapshot = new();
     private readonly List<StandChange> _changes = [];
 
+    /// <summary>Quello che Aurora ha detto di ogni traffico in raggio all'ultimo giro.</summary>
+    private IReadOnlyDictionary<string, TrafficStatus> _traffic =
+        new Dictionary<string, TrafficStatus>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Entro questo raggio dall'ARP un aereo fermo conta come parcheggiato qui.</summary>
     private const double AirportRadiusMeters = 3000;
 
@@ -212,7 +216,8 @@ public sealed class PlanService
     }
 
     /// <summary>Manda lo stand ad Aurora con <c>#LBGTE</c> e, se richiesto, lo comunica al pilota.</summary>
-    public async Task<string> PushToAuroraAsync(string callsign, string stand, bool alsoPrivateMessage, CancellationToken ct = default)
+    public async Task<string> PushToAuroraAsync(
+        string callsign, string stand, string? key, bool alsoPrivateMessage, CancellationToken ct = default)
     {
         await _aurora.AssignGateAsync(callsign, stand, ct);
 
@@ -220,16 +225,55 @@ public sealed class PlanService
         {
             try
             {
-                await _aurora.SendPrivateMessageAsync(callsign, $"Stand assegnato: {stand}. Buon volo!", ct);
+                await NotifyPilotAsync(callsign, stand, key, ct);
             }
             catch (Exception ex)
             {
                 return $"Stand {stand} assegnato a {callsign}, ma il messaggio privato non è partito: {ex.Message}";
             }
+
+            return $"Stand {stand} assegnato a {callsign} e comunicato al pilota.";
         }
 
         return $"Stand {stand} assegnato a {callsign}.";
     }
+
+    /// <summary>Il testo che riceverà il pilota, dal modello in configurazione.</summary>
+    public string PilotMessage(string callsign, string stand) => _config.PilotMessageTemplate
+        .Replace("{callsign}", callsign, StringComparison.OrdinalIgnoreCase)
+        .Replace("{stand}", stand, StringComparison.OrdinalIgnoreCase)
+        .Replace("{airport}", _config.Airport, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Manda al pilota il PM con lo stand da aspettarsi e se lo segna nello stato condiviso:
+    /// così tutte le postazioni sanno che è stato avvisato, e se lo stand poi cambia la riga
+    /// dice "da ricomunicare".
+    /// </summary>
+    public async Task<string> NotifyPilotAsync(string callsign, string stand, string? key, CancellationToken ct = default)
+    {
+        var text = PilotMessage(callsign, stand);
+        await _aurora.SendPrivateMessageAsync(callsign, text, ct);
+
+        if (!string.IsNullOrWhiteSpace(key))
+            await _shared.MutateAsync(d => d.Notified[key] = stand, ct);
+
+        return text;
+    }
+
+    /// <summary>La strippiera partenze, calcolata sull'ultimo piano.</summary>
+    public List<DepartureStrip> Departures() => DepartureBoard.Build(
+        _snapshot.Requests, _snapshot.Assignments, _traffic, _shared.Current.Called, DateTimeOffset.UtcNow);
+
+    /// <summary>
+    /// Segna a mano se una partenza ha chiamato. <c>null</c> toglie la scelta manuale e torna
+    /// alla deduzione da Aurora.
+    /// </summary>
+    public Task SetCalledAsync(string callsign, bool? called, CancellationToken ct = default) =>
+        _shared.MutateAsync(d =>
+        {
+            if (called is null) d.Called.Remove(callsign);
+            else d.Called[callsign] = called.Value;
+        }, ct);
 
     /// <summary>
     /// Chi è fermo su quale stand, adesso. Prima Aurora: il campo 17 di #TRPOS è lo stand
@@ -244,6 +288,7 @@ public sealed class PlanService
     {
         var found = new Dictionary<string, PhysicalOccupant>(StringComparer.OrdinalIgnoreCase);
         var known = _catalog.Stands.Select(s => s.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var traffic = new Dictionary<string, TrafficStatus>(StringComparer.OrdinalIgnoreCase);
 
         if (_aurora.IsConnected)
         {
@@ -254,6 +299,12 @@ public sealed class PlanService
                     try
                     {
                         var pos = await _aurora.GetTrafficPositionAsync(cs, ct);
+
+                        // Lo stato di ogni traffico serve anche alla strippiera (chi l'ha assunto,
+                        // se è ancora a terra), non solo al piazzale.
+                        traffic[cs] = new TrafficStatus(cs.ToUpperInvariant(), pos.OnGround,
+                            pos.GroundSpeed, pos.Altitude, pos.AssumedStation);
+
                         if (!pos.OnGround || pos.GroundSpeed > 3) continue;
                         if (string.IsNullOrWhiteSpace(pos.CurrentGate) || !known.Contains(pos.CurrentGate)) continue;
 
@@ -296,6 +347,7 @@ public sealed class PlanService
             }
         }
 
+        _traffic = traffic;
         return found.Values.ToList();
     }
 

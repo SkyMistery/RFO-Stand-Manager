@@ -36,6 +36,7 @@ builder.Services.AddSingleton<SharedStateStore>(sp => new SharedStateStore(
     sp.GetRequiredService<ILogger<SharedStateStore>>()));
 builder.Services.AddSingleton<PlanService>();
 builder.Services.AddHostedService<RefreshWorker>();
+builder.Services.AddHostedService<SyncWorker>();
 
 var app = builder.Build();
 
@@ -104,9 +105,14 @@ app.MapGet("/api/status", () => Results.Ok(new
 
 // --- Piano stand ------------------------------------------------------------------
 
-app.MapGet("/api/plan", async (CancellationToken ct) =>
+// Restituisce il piano già calcolato: lo tengono fresco i due worker in sottofondo, così la
+// pagina può chiederlo spesso senza far ripartire ogni volta le letture da Aurora e Whazzup.
+// Con ?fresh=true lo ricalcola subito.
+app.MapGet("/api/plan", async (bool? fresh, CancellationToken ct) =>
 {
-    var s = await plan.RecomputeAsync(ct);
+    var s = fresh == true || plan.Snapshot.GeneratedAt == default
+        ? await plan.RecomputeAsync(ct)
+        : plan.Snapshot;
     return Results.Ok(Present(s, shared.Current, plan.Changes));
 });
 
@@ -193,6 +199,18 @@ app.MapPost("/api/options", async (AllocationOptions body, CancellationToken ct)
 app.MapPost("/api/aurora/connect", async (CancellationToken ct) =>
 {
     var ok = await aurora.ConnectAsync(ct);
+
+    // Nello stato condiviso serve sapere chi ha scritto: se il nome non è configurato, il
+    // callsign della posizione ATC connessa è l'identità più utile per gli altri.
+    if (ok && config.OperatorFromAurora)
+    {
+        try
+        {
+            if (await aurora.GetConnectedCallsignAsync(ct) is { } me) config.Operator = me;
+        }
+        catch (AuroraException) { /* si tiene il nome che c'era */ }
+    }
+
     return Results.Ok(new { connected = ok, error = aurora.LastError });
 });
 
@@ -256,7 +274,7 @@ app.MapPost("/api/aurora/assign", async (AssignRequest body, CancellationToken c
 
     try
     {
-        var message = await plan.PushToAuroraAsync(body.Callsign, body.Stand, body.PrivateMessage, ct);
+        var message = await plan.PushToAuroraAsync(body.Callsign, body.Stand, body.Key, body.PrivateMessage, ct);
 
         // Assegnare a mano significa bloccare quello stand per tutti.
         if (!string.IsNullOrWhiteSpace(body.Key)) await plan.PinAsync(body.Key, body.Stand, ct);
@@ -267,6 +285,48 @@ app.MapPost("/api/aurora/assign", async (AssignRequest body, CancellationToken c
     {
         return Results.BadRequest(new { error = ex.Message });
     }
+});
+
+/// Manda al pilota il PM con lo stand da aspettarsi.
+app.MapPost("/api/aurora/notify", async (NotifyRequest body, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(body.Callsign) || string.IsNullOrWhiteSpace(body.Stand))
+        return Results.BadRequest(new { error = "Callsign e stand sono obbligatori." });
+
+    try
+    {
+        var text = await plan.NotifyPilotAsync(body.Callsign, body.Stand, body.Key, ct);
+        return Results.Ok(new { ok = true, message = $"Inviato a {body.Callsign}: \"{text}\"" });
+    }
+    catch (AuroraException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+/// Il testo che riceverebbe il pilota, per farlo vedere al controllore prima dell'invio.
+app.MapGet("/api/aurora/message", (string callsign, string stand) =>
+    Results.Ok(new { text = plan.PilotMessage(callsign, stand) }));
+
+// --- Strippiera partenze -------------------------------------------------------------
+
+app.MapGet("/api/departures", () =>
+{
+    var strips = plan.Departures();
+    return Results.Ok(new
+    {
+        waiting = strips.Where(s => !s.Called),
+        called = strips.Where(s => s.Called),
+    });
+});
+
+app.MapPost("/api/departures/called", async (CalledRequest body, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(body.Callsign))
+        return Results.BadRequest(new { error = "Callsign obbligatorio." });
+
+    await plan.SetCalledAsync(body.Callsign, body.Called, ct);
+    return Results.Ok(new { ok = true });
 });
 
 /// Toglie lo stand da Aurora, e se c'era un'assegnazione fissata la libera per tutti.
@@ -390,6 +450,7 @@ static object Present(PlanSnapshot s, SharedDocument doc, IReadOnlyList<StandCha
                 displacedBy = a.DisplacedBy,
                 wasPinned = a.WasPinned,
                 unscheduled = a.Unscheduled,
+                notifiedStand = doc.Notified.TryGetValue(a.Key, out var told) ? told : null,
             };
         }),
     };
@@ -400,6 +461,8 @@ internal sealed record StandClosedRequest(string Stand, bool Closed);
 internal sealed record AssignRequest(string Callsign, string Stand, string? Key, bool PrivateMessage);
 internal sealed record ShowRequest(string Callsign);
 internal sealed record ClearRequest(string Callsign, string? Key);
+internal sealed record NotifyRequest(string Callsign, string Stand, string? Key);
+internal sealed record CalledRequest(string Callsign, bool? Called);
 
 /// <summary>Tiene il piano aggiornato in sottofondo, così la UI trova sempre dati freschi.</summary>
 internal sealed class RefreshWorker(PlanService plan, ILogger<RefreshWorker> log) : BackgroundService
@@ -409,7 +472,7 @@ internal sealed class RefreshWorker(PlanService plan, ILogger<RefreshWorker> log
         // Un attimo di respiro: l'host deve finire di partire.
         await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
 
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(20));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
         do
         {
             try
@@ -423,5 +486,40 @@ internal sealed class RefreshWorker(PlanService plan, ILogger<RefreshWorker> log
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+}
+
+/// <summary>
+/// Tiene allineata questa postazione con le altre. Ogni pochi secondi chiede al server se lo
+/// stato condiviso è cambiato (se no, risponde 304 senza corpo) e, quando un'altra postazione
+/// ha scritto, ricalcola subito invece di aspettare il prossimo giro.
+/// </summary>
+internal sealed class SyncWorker(PlanService plan, SharedStateStore shared, ILogger<SyncWorker> log) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (!shared.Shared) return;
+
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        while (await timer.WaitForNextTickAsync(stoppingToken))
+        {
+            try
+            {
+                var before = shared.Current.Version;
+                await shared.PullAsync(stoppingToken);
+
+                if (shared.Current.Version != before)
+                {
+                    log.LogInformation("Stato condiviso aggiornato da {Who}: versione {Version}",
+                        shared.Current.UpdatedBy, shared.Current.Version);
+                    await plan.RecomputeAsync(stoppingToken);
+                }
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception ex)
+            {
+                log.LogWarning("Sincronizzazione fallita: {Error}", ex.Message);
+            }
+        }
     }
 }

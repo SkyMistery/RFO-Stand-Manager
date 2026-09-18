@@ -2,6 +2,8 @@
 
 const state = {
   plan: null,
+  planSig: '',
+  depSig: '',
   seenChanges: null,
   status: null,
   filter: '',
@@ -158,9 +160,14 @@ function renderSelected(r) {
       <div class="actions">
         <input type="text" id="selStand" value="${esc(r.suggestion || '')}" placeholder="stand">
         <label class="toggle"><input type="checkbox" id="selPm"> <span>avvisa il pilota</span></label>
+        <button class="btn" id="selNotify">Solo PM</button>
         <button class="btn btn-primary" id="selAssign">Assegna in Aurora</button>
       </div>
     </div>`;
+
+  $('selNotify').addEventListener('click', () => {
+    notifyPilot(r.callsign, $('selStand').value.trim(), r.key);
+  });
 
   $('selAssign').addEventListener('click', () => {
     assign(r.callsign, $('selStand').value.trim(), r.key, $('selPm').checked);
@@ -171,7 +178,13 @@ function renderSelected(r) {
 
 async function refreshPlan() {
   try {
-    state.plan = await api('/api/plan');
+    const p = await api('/api/plan');
+    state.plan = p;
+
+    const sig = JSON.stringify([p.assignments, p.changes, p.warnings, p.occupants]);
+    if (sig === state.planSig) return;
+    state.planSig = sig;
+
     renderPlan();
   } catch (e) {
     toast(`Piano non aggiornato: ${e.message}`, 'bad');
@@ -221,7 +234,9 @@ function renderPlan() {
       a.oversize ? '<span class="badge oversize">fuori misura</span>' : '',
       a.unscheduled ? '<span class="badge oversize">non programmato</span>' : '',
       a.reassigned ? `<span class="badge moved">riassegnato: ${esc(a.displacedFrom)} occupato</span>` : '',
-      a.reassigned && a.wasPinned ? '<span class="badge conflict">da ricomunicare</span>' : '',
+      a.notifiedStand && a.notifiedStand === a.stand ? '<span class="badge live">pilota avvisato</span>' : '',
+      (a.notifiedStand && a.stand && a.notifiedStand !== a.stand) || (a.reassigned && a.wasPinned && !a.notifiedStand)
+        ? `<span class="badge conflict">da ricomunicare${a.notifiedStand ? ` (detto ${esc(a.notifiedStand)})` : ''}</span>` : '',
       a.distanceNm ? `<span class="badge">${Math.round(a.distanceNm)} NM</span>` : '',
     ].filter(Boolean).join(' ');
 
@@ -240,6 +255,9 @@ function renderPlan() {
       <td>
         <div class="row-actions">
           <button class="btn btn-small" data-act="show" data-cs="${esc(a.callsign)}">Mostra</button>
+          <button class="btn btn-small" data-act="notify" title="Manda al pilota un PM con lo stand da aspettarsi"
+                  data-cs="${esc(a.callsign)}" data-stand="${esc(a.stand || '')}"
+                  data-key="${esc(a.key)}" ${a.stand && !a.unscheduled ? '' : 'disabled'}>PM</button>
           <button class="btn btn-small btn-primary" data-act="assign"
                   data-cs="${esc(a.callsign)}" data-stand="${esc(a.stand || '')}"
                   data-key="${esc(a.key)}" ${a.stand && !a.unscheduled ? '' : 'disabled'}>Assegna</button>
@@ -251,6 +269,7 @@ function renderPlan() {
   body.querySelectorAll('button[data-act]').forEach((b) => {
     b.addEventListener('click', () => {
       if (b.dataset.act === 'show') showInAurora(b.dataset.cs);
+      else if (b.dataset.act === 'notify') notifyPilot(b.dataset.cs, b.dataset.stand, b.dataset.key);
       else assign(b.dataset.cs, b.dataset.stand, b.dataset.key, false);
     });
   });
@@ -369,6 +388,106 @@ async function assign(callsign, stand, key, privateMessage) {
   }
 }
 
+/// Il PM arriva a un pilota vero: prima si fa vedere il testo esatto e si chiede conferma.
+async function notifyPilot(callsign, stand, key) {
+  if (!stand) { toast('Nessuno stand da comunicare.', 'bad'); return; }
+
+  try {
+    const preview = await api(`/api/aurora/message?callsign=${encodeURIComponent(callsign)}&stand=${encodeURIComponent(stand)}`);
+    if (!confirm(`Inviare a ${callsign} questo messaggio privato?\n\n"${preview.text}"`)) return;
+
+    const r = await api('/api/aurora/notify', {
+      method: 'POST',
+      body: JSON.stringify({ callsign, stand, key }),
+    });
+    toast(r.message, 'ok');
+    refreshPlan();
+  } catch (e) {
+    toast(e.message, 'bad');
+  }
+}
+
+// --- Strippiera partenze -----------------------------------------------------
+
+async function refreshDepartures() {
+  try {
+    const d = await api('/api/departures');
+
+    // Minuti all'EOBT a parte, perché cambiano ogni minuto: se il resto è uguale e il
+    // minuto no, ridisegnare vale la pena solo una volta al minuto, non ogni 4 secondi.
+    const sig = JSON.stringify([d, Math.floor(Date.now() / 60000)]);
+    if (sig === state.depSig) return;
+    state.depSig = sig;
+
+    renderStrips('waitingStrips', 'waitingCount', d.waiting, true);
+    renderStrips('calledStrips', 'calledCount', d.called, false);
+  } catch {
+    /* la strippiera riprova al prossimo giro */
+  }
+}
+
+function duration(m) {
+  if (m < 90) return `${m}'`;
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  return r ? `${h} h ${r}'` : `${h} h`;
+}
+
+function eobtHint(m) {
+  if (m === null || m === undefined) return '';
+  if (m < -5) return `<span class="badge conflict">EOBT +${duration(-m)}</span>`;
+  if (m <= 15) return `<span class="badge oversize">fra ${Math.max(m, 0)}'</span>`;
+  return `<span class="badge">fra ${duration(m)}</span>`;
+}
+
+function renderStrips(listId, countId, strips, waiting) {
+  $(countId).textContent = strips.length;
+  const el = $(listId);
+
+  if (!strips.length) {
+    el.innerHTML = `<p class="muted strip-empty">${waiting ? 'Nessuna partenza in attesa.' : 'Nessuno ha ancora chiamato.'}</p>`;
+    return;
+  }
+
+  el.innerHTML = strips.map((s) => `
+    <div class="strip ${waiting ? '' : 'called'} ${s.online ? '' : 'offline'}">
+      <div class="strip-time cs">${hhmm(s.eobt)}</div>
+      <div class="strip-main">
+        <div><span class="cs strip-cs">${esc(s.callsign)}</span>
+             <span class="muted">${esc(s.aircraftType)} → ${esc(s.destination)}</span></div>
+        <div class="strip-badges">
+          <span class="badge ${s.stand ? 'booked' : ''}">stand ${esc(s.stand || '—')}</span>
+          <span class="badge ${s.online ? 'live' : ''}">${s.online ? 'online' : 'non connesso'}</span>
+          ${s.assumedBy ? `<span class="badge">assunto da ${esc(s.assumedBy)}</span>` : ''}
+          ${s.calledSource === 'manuale' ? '<span class="badge pin">a mano</span>' : ''}
+          ${eobtHint(s.minutesToEobt)}
+        </div>
+      </div>
+      <div class="strip-actions">
+        <button class="btn btn-small ${waiting ? 'btn-primary' : ''}" data-cs="${esc(s.callsign)}"
+                data-called="${waiting}">${waiting ? 'Ha chiamato →' : '← Non ancora'}</button>
+        ${s.calledSource === 'manuale'
+          ? `<button class="btn btn-small" data-cs="${esc(s.callsign)}" data-called="auto"
+                     title="Torna a dedurlo da chi ha assunto il traffico">auto</button>` : ''}
+      </div>
+    </div>`).join('');
+
+  el.querySelectorAll('button[data-called]').forEach((b) => {
+    b.addEventListener('click', () => setCalled(b.dataset.cs, b.dataset.called));
+  });
+}
+
+async function setCalled(callsign, value) {
+  const called = value === 'auto' ? null : value === 'true';
+  try {
+    await api('/api/departures/called', { method: 'POST', body: JSON.stringify({ callsign, called }) });
+    state.depSig = '';
+    refreshDepartures();
+  } catch (e) {
+    toast(e.message, 'bad');
+  }
+}
+
 async function showInAurora(callsign) {
   try {
     await api('/api/aurora/show', { method: 'POST', body: JSON.stringify({ callsign }) });
@@ -427,5 +546,7 @@ $('btnPublish').addEventListener('click', async () => {
 refreshStatus();
 refreshPlan();
 setInterval(refreshStatus, 10000);
-setInterval(refreshPlan, 20000);
+setInterval(refreshPlan, 4000);
+refreshDepartures();
+setInterval(refreshDepartures, 4000);
 setInterval(pollSelected, 1500);

@@ -35,6 +35,23 @@
 
   <section class="panel">
     <div class="panel-head">
+      <h2>Partenze</h2>
+      <p class="muted">In ordine di EOBT. "Ha chiamato" si deduce da chi ha assunto il traffico in Aurora; il pulsante lo corregge a mano per tutti.</p>
+    </div>
+    <div class="board">
+      <div class="board-col">
+        <h3>Da chiamare <span id="waitingCount" class="count">0</span></h3>
+        <div id="waitingStrips" class="strips"></div>
+      </div>
+      <div class="board-col">
+        <h3>Hanno chiamato <span id="calledCount" class="count">0</span></h3>
+        <div id="calledStrips" class="strips"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
       <h2>Piano stand</h2>
       <div class="actions">
         <input type="search" id="filter" placeholder="Filtra callsign, stand, tipo…" autocomplete="off">
