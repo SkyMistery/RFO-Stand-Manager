@@ -157,6 +157,23 @@ aggiornamento di Whazzup non fanno saltare le scelte automatiche da uno stand al
 veri, quattro ricalcoli di fila senza nessun cambio. Quando uno stand cambia davvero compare in
 cima al piano, nell'elenco *Ultimi cambi di stand*, e con un avviso.
 
+### Ordine di comodità e stand suggeriti
+
+Il campo `priority` di `stands.LIRN.json` è l'ordine di comodità: prima gli stand 10-23, poi
+51-57, poi 41-46 (tutti apron 1), poi l'apron 2, poi l'apron 3. Un gruppo si riempie prima di
+passare al successivo; dentro il gruppo vince lo stand che spreca meno spazio, così l'11 e il 21
+(61 m) sono gli ultimi del loro gruppo per un A320. Per cambiare l'ordine basta cambiare i
+numeri nel file.
+
+Il gruppo comanda sullo spazio sprecato: se nel primo gruppo è libero solo l'11, un A320 va lì
+prima che in un 55 su misura. Sul booking vero succede a EJU14MA alle 08:35.
+
+Quando assegni, **Stand ▾** sulla riga apre gli stand adatti a quell'aereo, liberi, nello
+stesso ordine in cui li sceglierebbe il programma, con lo stand attuale evidenziato e gli
+occupati (con chi li occupa) dietro "mostra anche". Un clic fissa lo stand per tutte le
+postazioni; "Assegna" poi lo manda in Aurora. Gli stessi suggerimenti compaiono nel riquadro del
+traffico selezionato, dove il clic riempie la casella dello stand.
+
 **Parametri regolabili durante l'evento** senza ricompilare, via `GET`/`POST /api/options`:
 margine fra un occupante e il successivo (5 minuti, quanto basta per come il booking impacchetta
 gli slot), sosta predefinita, rullaggio, finestra di rotazione.

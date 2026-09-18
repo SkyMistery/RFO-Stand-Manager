@@ -2,6 +2,8 @@
 
 const state = {
   plan: null,
+  selSig: '',
+  expanded: null,
   planSig: '',
   depSig: '',
   seenChanges: null,
@@ -133,6 +135,10 @@ function renderSelected(r) {
   const box = $('selectedBox');
   state.selected = r;
 
+  const sig = JSON.stringify(r ?? null);
+  if (sig === state.selSig) return;
+  state.selSig = sig;
+
   if (!r || !r.callsign) {
     box.className = 'selected-box empty';
     box.innerHTML = '<p>Seleziona un aereo in Aurora: qui comparirà lo stand suggerito.</p>';
@@ -157,6 +163,7 @@ function renderSelected(r) {
               : 'Non assunto: assumilo in Aurora prima di assegnare lo stand.'}</div>`
           : ''}
       </div>
+      ${r.inPlan ? '<div id="selOptions" class="stand-options"><span class="muted">Cerco gli stand adatti…</span></div>' : ''}
       <div class="actions">
         <input type="text" id="selStand" value="${esc(r.suggestion || '')}" placeholder="stand">
         <label class="toggle"><input type="checkbox" id="selPm"> <span>avvisa il pilota</span></label>
@@ -164,6 +171,13 @@ function renderSelected(r) {
         <button class="btn btn-primary" id="selAssign">Assegna in Aurora</button>
       </div>
     </div>`;
+
+  if (r.inPlan && r.key) {
+    loadOptions(r.key, $('selOptions'), (stand) => {
+      $('selStand').value = stand;
+      markChosen($('selOptions'), stand);
+    });
+  }
 
   $('selNotify').addEventListener('click', () => {
     notifyPilot(r.callsign, $('selStand').value.trim(), r.key);
@@ -244,6 +258,10 @@ function renderPlan() {
 
     const rowClass = a.conflict ? 'conflict' : a.reassigned ? 'moved' : a.oversize ? 'oversize' : '';
 
+    const expandedRow = state.expanded === a.key
+      ? `<tr class="options-row"><td colspan="8"><div class="stand-options" data-options-for="${esc(a.key)}"></div></td></tr>`
+      : '';
+
     return `<tr class="${rowClass}">
       <td class="cs">${hhmm(a.from)}–${hhmm(a.to)}</td>
       <td class="cs">${esc(a.callsign)}</td>
@@ -254,6 +272,8 @@ function renderPlan() {
       <td class="reason">${esc(a.reason)}</td>
       <td>
         <div class="row-actions">
+          <button class="btn btn-small" data-act="options" data-key="${esc(a.key)}"
+                  title="Gli stand adatti a questo aereo, dal più comodo" ${a.unscheduled ? 'disabled' : ''}>Stand ▾</button>
           <button class="btn btn-small" data-act="show" data-cs="${esc(a.callsign)}">Mostra</button>
           <button class="btn btn-small" data-act="notify" title="Manda al pilota un PM con lo stand da aspettarsi"
                   data-cs="${esc(a.callsign)}" data-stand="${esc(a.stand || '')}"
@@ -263,11 +283,22 @@ function renderPlan() {
                   data-key="${esc(a.key)}" ${a.stand && !a.unscheduled ? '' : 'disabled'}>Assegna</button>
         </div>
       </td>
-    </tr>`;
+    </tr>${expandedRow}`;
   }).join('');
+
+  // La riga aperta resta aperta anche quando il piano si ridisegna.
+  const open = body.querySelector('[data-options-for]');
+  if (open) {
+    loadOptions(open.dataset.optionsFor, open, (stand) => pinStand(open.dataset.optionsFor, stand));
+  }
 
   body.querySelectorAll('button[data-act]').forEach((b) => {
     b.addEventListener('click', () => {
+      if (b.dataset.act === 'options') {
+        state.expanded = state.expanded === b.dataset.key ? null : b.dataset.key;
+        renderPlan();
+        return;
+      }
       if (b.dataset.act === 'show') showInAurora(b.dataset.cs);
       else if (b.dataset.act === 'notify') notifyPilot(b.dataset.cs, b.dataset.stand, b.dataset.key);
       else assign(b.dataset.cs, b.dataset.stand, b.dataset.key, false);
@@ -275,6 +306,59 @@ function renderPlan() {
   });
 
   renderGantt();
+}
+
+// --- Stand suggeriti ---------------------------------------------------------
+
+/// Gli stand adatti, dal più comodo. Si mostrano i liberi; gli occupati stanno dietro un
+/// "mostra anche", perché servono solo quando si vuole forzare.
+async function loadOptions(key, el, onPick) {
+  try {
+    const s = await api(`/api/suggest?key=${encodeURIComponent(key)}`);
+    const free = s.options.filter((o) => o.fits && o.free);
+    const busy = s.options.filter((o) => o.fits && !o.free);
+
+    const chip = (o) => `
+      <button class="stand-chip ${o.stand === s.current ? 'current' : ''} ${o.free ? '' : 'busy'}"
+              data-stand="${esc(o.stand)}" title="${esc(o.free ? o.why : `occupato da ${o.busyWith}`)}">
+        <span class="chip-id">${esc(o.stand)}</span>
+        <span class="chip-apron">${o.apron ? `A${o.apron}` : ''}</span>
+      </button>`;
+
+    const dims = s.wingspan ? ` · ${s.wingspan.toFixed(1)} × ${s.length.toFixed(1)} m` : '';
+
+    el.innerHTML = `
+      <div class="options-head">
+        <span>Stand adatti a <b>${esc(s.aircraft || 'tipo ignoto')}</b>${dims}, dal più comodo:</span>
+        <span class="muted">${free.length} liberi${busy.length ? `, ${busy.length} occupati` : ''}</span>
+      </div>
+      <div class="chips-line">${free.map(chip).join('') || '<span class="muted">Nessuno stand adatto è libero in quella finestra.</span>'}</div>
+      ${busy.length ? `<details><summary class="muted">mostra anche gli occupati</summary>
+        <div class="chips-line">${busy.map(chip).join('')}</div></details>` : ''}`;
+
+    el.querySelectorAll('.stand-chip').forEach((b) => {
+      b.addEventListener('click', () => onPick(b.dataset.stand));
+    });
+  } catch (e) {
+    el.innerHTML = `<span class="muted">Stand non disponibili: ${esc(e.message)}</span>`;
+  }
+}
+
+function markChosen(el, stand) {
+  el.querySelectorAll('.stand-chip').forEach((b) => b.classList.toggle('chosen', b.dataset.stand === stand));
+}
+
+/// Dalla riga del piano: fissa lo stand per tutte le postazioni. In Aurora lo porta poi "Assegna".
+async function pinStand(key, stand) {
+  try {
+    await api('/api/pin', { method: 'POST', body: JSON.stringify({ key, stand }) });
+    toast(`Stand ${stand} fissato. "Assegna" lo manda in Aurora.`, 'ok');
+    state.expanded = null;
+    state.planSig = '';
+    refreshPlan();
+  } catch (e) {
+    toast(e.message, 'bad');
+  }
 }
 
 // --- Cambi di stand ---------------------------------------------------------

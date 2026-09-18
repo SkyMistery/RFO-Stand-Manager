@@ -1,5 +1,15 @@
 namespace RfoGateManager.Domain;
 
+/// <summary>Uno stand proposto per un volo, con il motivo della sua posizione nell'elenco.</summary>
+public sealed record StandOption(
+    string StandId,
+    int? Apron,
+    bool Fits,
+    bool Free,
+    string? BusyWith,
+    double Score,
+    string Why);
+
 public sealed record AllocationResult
 {
     public required IReadOnlyList<Assignment> Assignments { get; init; }
@@ -288,21 +298,30 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
     private (double Score, string Why) Score(
         Stand stand, StandRequest req, IReadOnlyDictionary<string, string> previous)
     {
+        // Il punteggio è a strati, dal più pesante: compagnia, stabilità del piano, ordine
+        // di comodità (priority × 10, quindi 1000 punti fra un gruppo e il successivo) e
+        // solo dentro lo stesso gruppo lo spazio sprecato, il pontile, i MARS.
         double score = 0;
         var why = new List<string>();
+
+        if (stand.Apron is { } apron) why.Add($"apron {apron}");
 
         if (req.AirlineCode is not null &&
             stand.Airlines.Contains(req.AirlineCode, StringComparer.OrdinalIgnoreCase))
         {
-            score -= 1000;
+            score -= 100_000;
             why.Add($"stand assegnato a {req.AirlineCode}");
         }
 
+        // Non rimescolare: uno stand già dato resta, anche se nel frattempo se n'è liberato
+        // uno più comodo. Il pilota potrebbe già saperlo.
         if (Pick(previous, req.Key) is { } prev && prev.Equals(stand.Id, StringComparison.OrdinalIgnoreCase))
         {
-            score -= 500;
+            score -= 50_000;
             why.Add("confermato dal piano precedente");
         }
+
+        score += stand.Priority * 10.0;
 
         // Non sprecare uno stand grande su un aereo piccolo. In metri se li conosciamo,
         // altrimenti a salti di categoria.
@@ -330,12 +349,59 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
         // Bruciare uno stand MARS ne rende inagibili altri: usiamolo per ultimo.
         if (_blocks.TryGetValue(stand.Id, out var b) && b.Count > 0) score += 15;
 
-        score += stand.Priority / 10.0;
-
         var text = why.Count > 0
             ? $"Stand {stand.Id}: {string.Join(", ", why)}."
             : $"Stand {stand.Id}: primo compatibile e libero nella finestra.";
         return (score, text);
+    }
+
+    /// <summary>
+    /// Gli stand possibili per un volo, dal più comodo, guardando il piano così com'è adesso
+    /// (il volo stesso escluso, così il suo stand attuale compare fra i liberi). In cima quelli
+    /// adatti e liberi, nello stesso ordine in cui li sceglierebbe il programma; poi quelli
+    /// adatti ma occupati, con chi li occupa; per ultimi quelli troppo piccoli.
+    /// </summary>
+    public List<StandOption> Suggest(
+        StandRequest req,
+        IReadOnlyList<StandRequest> requests,
+        IReadOnlyList<Assignment> assignments)
+    {
+        var byKey = requests.ToDictionary(r => r.Key, StringComparer.OrdinalIgnoreCase);
+        var occupancy = new Dictionary<string, List<Slot>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var a in assignments)
+        {
+            if (a.StandId is null || a.Key.Equals(req.Key, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!byKey.TryGetValue(a.Key, out var other)) continue;
+            Occupy(occupancy, a.StandId, other, physical: other.ActualStand is not null);
+        }
+
+        var none = new Dictionary<string, string>();
+        var options = new List<StandOption>();
+
+        foreach (var stand in _byId.Values.Where(s => !s.Disabled))
+        {
+            var fits = Fits(stand, req, out _);
+            var free = IsFree(occupancy, stand, req, out var clash);
+
+            string? busyWith = null;
+            if (!free)
+                busyWith = clash == MarsClash ? "stand MARS adiacente"
+                         : byKey.TryGetValue(clash, out var c) ? c.Callsign
+                         : clash;
+
+            // Senza il piano precedente: qui conta la comodità, non la stabilità.
+            var (score, why) = Score(stand, req, none);
+            if (!fits) why = $"Stand {stand.Id}: troppo piccolo per {req.AircraftType}.";
+
+            options.Add(new StandOption(stand.Id, stand.Apron, fits, free, busyWith, score, why));
+        }
+
+        return options
+            .OrderBy(o => o.Fits && o.Free ? 0 : o.Fits ? 1 : 2)
+            .ThenBy(o => o.Score)
+            .ThenBy(o => o.StandId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <summary>
@@ -372,7 +438,7 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
         return true;
     }
 
-    private const string MarsClash = " mars";
+    private const string MarsClash = "<MARS>";
 
     private bool IsFree(
         Dictionary<string, List<Slot>> occupancy,

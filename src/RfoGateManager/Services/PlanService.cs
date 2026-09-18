@@ -260,6 +260,19 @@ public sealed class PlanService
         return text;
     }
 
+    /// <summary>
+    /// Gli stand possibili per un volo del piano, dal più comodo. Null se il volo non c'è.
+    /// </summary>
+    public (StandRequest Request, List<StandOption> Options)? Suggest(string key)
+    {
+        var snap = _snapshot;
+        var req = snap.Requests.FirstOrDefault(r => r.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+        if (req is null) return null;
+
+        var allocator = new StandAllocator(snap.Stands, Options);
+        return (req, allocator.Suggest(req, snap.Requests, snap.Assignments));
+    }
+
     /// <summary>La strippiera partenze, calcolata sull'ultimo piano.</summary>
     public List<DepartureStrip> Departures() => DepartureBoard.Build(
         _snapshot.Requests, _snapshot.Assignments, _traffic, _shared.Current.Called, DateTimeOffset.UtcNow);

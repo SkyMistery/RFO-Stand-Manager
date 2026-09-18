@@ -308,6 +308,34 @@ app.MapPost("/api/aurora/notify", async (NotifyRequest body, CancellationToken c
 app.MapGet("/api/aurora/message", (string callsign, string stand) =>
     Results.Ok(new { text = plan.PilotMessage(callsign, stand) }));
 
+/// Gli stand adatti per un volo, dal più comodo: prima quelli liberi, poi gli occupati.
+app.MapGet("/api/suggest", (string key) =>
+{
+    if (plan.Suggest(key) is not { } s) return Results.NotFound(new { error = "Volo non trovato nel piano." });
+
+    var current = plan.Snapshot.Assignments
+        .FirstOrDefault(a => a.Key.Equals(key, StringComparison.OrdinalIgnoreCase))?.StandId;
+
+    return Results.Ok(new
+    {
+        key,
+        callsign = s.Request.Callsign,
+        aircraft = s.Request.AircraftType,
+        wingspan = s.Request.WingspanM,
+        length = s.Request.LengthM,
+        current,
+        options = s.Options.Select(o => new
+        {
+            stand = o.StandId,
+            apron = o.Apron,
+            fits = o.Fits,
+            free = o.Free,
+            busyWith = o.BusyWith,
+            why = o.Why,
+        }),
+    });
+});
+
 // --- Strippiera partenze -------------------------------------------------------------
 
 app.MapGet("/api/departures", () =>

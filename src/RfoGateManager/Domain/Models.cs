@@ -41,8 +41,14 @@ public sealed record Stand
     /// </summary>
     public IReadOnlyList<string> Blocks { get; init; } = [];
 
-    /// <summary>A parità di punteggio vince la priorità più bassa.</summary>
+    /// <summary>
+    /// Ordine di comodità: più basso = più comodo. Separa i gruppi di stand (a Napoli
+    /// 10-23, poi 51-57, poi 41-46, poi apron 2, poi apron 3) e pesa più dello spazio
+    /// sprecato, quindi un gruppo viene riempito prima di passare al successivo.
+    /// </summary>
     public int Priority { get; init; } = 100;
+
+    public int? Apron { get; init; }
 
     /// <summary>Stand escluso dall'allocazione automatica (lavori, chiuso, riservato).</summary>
     public bool Disabled { get; init; }
