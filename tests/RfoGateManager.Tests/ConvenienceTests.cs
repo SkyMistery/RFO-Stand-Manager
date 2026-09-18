@@ -4,8 +4,9 @@ using Xunit;
 namespace RfoGateManager.Tests;
 
 /// <summary>
-/// L'ordine di comodità di Napoli: stand 10-23, poi 51-57, poi 41-46 (tutti apron 1), poi
+/// L'ordine di comodità di Napoli: stand 10-20, poi 51-57, poi 41-46 (tutti apron 1), poi
 /// apron 2, poi apron 3. Il gruppo comanda; dentro il gruppo vince chi spreca meno spazio.
+/// Il 21 va di solito agli aerei grandi, il 22 e il 23 ai jet privati.
 /// </summary>
 public class ConvenienceTests
 {
@@ -28,6 +29,22 @@ public class ConvenienceTests
     private static readonly Stand S71 = S("71", 36, 45, 500, 3);
     private static readonly Stand S61 = S("61", 25, 31, 400, 2);
 
+    private static readonly Stand S21 = S("21", 61, 59, 100, 1) with { ReservedFor = ["large"] };
+    private static readonly Stand S22 = S("22", 36, 45, 100, 1) with { ReservedFor = ["ga"] };
+    private static readonly Stand S23 = S("23", 32, 37, 100, 1) with { ReservedFor = ["ga"] };
+
+    private static StandRequest B788(string cs) => new()
+    {
+        Key = $"{cs}:0", Callsign = cs, AircraftType = "B788", Size = SizeCategory.E,
+        WingspanM = 60.12, LengthM = 56.72, From = T0, To = T0.AddMinutes(90),
+    };
+
+    private static StandRequest BizJet(string cs, string type = "C56X") => new()
+    {
+        Key = $"{cs}:0", Callsign = cs, AircraftType = type, Size = SizeCategory.B, Use = "ga",
+        WingspanM = 16.97, LengthM = 14.91, From = T0, To = T0.AddMinutes(90),
+    };
+
     private static StandRequest A320(string cs, int start = 0, string? airline = null) => new()
     {
         Key = $"{cs}:{start}", Callsign = cs, AircraftType = "A320",
@@ -48,7 +65,7 @@ public class ConvenienceTests
     public void I_gruppi_si_scalano_nell_ordine_voluto()
     {
         // Ogni volo occupa lo stand del precedente: l'ordine con cui si riempiono è l'ordine
-        // di comodità, 10-23, 51-57, 41-46, apron 2, apron 3.
+        // di comodità, 10-20, 51-57, 41-46, apron 2, apron 3.
         var stands = new[] { S71, S63, S42, S55, S12 };
         var reqs = Enumerable.Range(0, 5).Select(i => A320($"V{i}")).ToArray();
 
@@ -134,5 +151,78 @@ public class ConvenienceTests
         var options = allocator.Suggest(mine, [mine], plan.Assignments);
 
         Assert.True(options.Single(o => o.StandId == "12").Free);
+    }
+
+    // --- Stand riservati di solito -----------------------------------------------------
+
+    [Fact]
+    public void Un_aereo_grande_va_sul_21_prima_che_sugli_altri_stand_capienti()
+    {
+        // L'11 è nello stesso gruppo e altrettanto largo: vince il 21, che è quello dei grandi.
+        Assert.Equal("21", Pick([S11, S21], B788("AAL180")));
+    }
+
+    [Fact]
+    public void Un_narrowbody_lascia_gli_stand_da_widebody_anche_se_sono_nel_gruppo_piu_comodo()
+    {
+        // Il caso di EJU14MA nel booking vero: nel primo gruppo è libero solo l'11, da 61 m.
+        var s11 = S11 with { ReservedFor = ["large"] };
+
+        Assert.Equal("55", Pick([s11, S55], A320("EJU14MA")));
+    }
+
+    [Fact]
+    public void Un_757_non_occupa_uno_stand_da_widebody_se_ne_ha_uno_su_misura_nello_stesso_gruppo()
+    {
+        var s11 = S11 with { ReservedFor = ["large"] };
+        var b752 = new StandRequest
+        {
+            Key = "B752:0", Callsign = "TOM1", AircraftType = "B752", Size = SizeCategory.D,
+            WingspanM = 38.05, LengthM = 47.32, From = T0, To = T0.AddMinutes(60),
+        };
+
+        Assert.Equal("13", Pick([s11, S13], b752));
+    }
+
+    [Fact]
+    public void Un_narrowbody_non_prende_il_21_finche_c_e_posto_altrove_anche_in_apron_3()
+    {
+        Assert.Equal("71", Pick([S21, S71], A320("AZA100")));
+    }
+
+    [Fact]
+    public void Se_e_pieno_tutto_il_resto_anche_il_21_si_usa_e_il_motivo_lo_dice()
+    {
+        var result = new StandAllocator([S21, S71], Opt).Allocate([A320("RYR200"), A320("AZA100")], T0);
+
+        var onReserved = result.Assignments.Single(a => a.StandId == "21");
+        Assert.Contains("usato perché il resto è pieno", onReserved.Reason);
+        Assert.Equal(0, result.Unassigned);
+    }
+
+    [Fact]
+    public void Un_jet_privato_va_sul_22_o_23_prima_che_sugli_stand_comodi()
+    {
+        Assert.Equal("23", Pick([S12, S22, S23], BizJet("IABCD")));   // il 23 spreca meno spazio
+    }
+
+    [Fact]
+    public void Un_aereo_di_linea_lascia_liberi_gli_stand_dei_jet_privati()
+    {
+        Assert.Equal("63", Pick([S22, S23, S63], A320("AZA100")));
+    }
+
+    [Fact]
+    public void Nei_suggerimenti_gli_stand_riservati_ad_altri_stanno_in_fondo()
+    {
+        var mine = A320("AZA100");
+        var allocator = new StandAllocator([S21, S22, S12, S71], Opt);
+        var plan = allocator.Allocate([mine], T0);
+
+        var free = allocator.Suggest(mine, [mine], plan.Assignments)
+            .Where(o => o.Fits && o.Free).Select(o => o.StandId).ToList();
+
+        Assert.Equal(["12", "71"], free.Take(2));
+        Assert.Equal(["21", "22"], free.Skip(2).OrderBy(x => x));
     }
 }

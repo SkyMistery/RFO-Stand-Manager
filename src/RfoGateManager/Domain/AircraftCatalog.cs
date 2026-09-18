@@ -25,6 +25,11 @@ public static class AircraftCatalog
         ["C56X"] = SizeCategory.B, ["CL60"] = SizeCategory.B, ["GLF4"] = SizeCategory.B,
         ["GLF5"] = SizeCategory.B, ["GLF6"] = SizeCategory.B, ["FA7X"] = SizeCategory.B,
         ["E50P"] = SizeCategory.B, ["E55P"] = SizeCategory.B, ["PC12"] = SizeCategory.B,
+        ["C68A"] = SizeCategory.B, ["C700"] = SizeCategory.B, ["CL35"] = SizeCategory.B,
+        ["CL30"] = SizeCategory.B, ["G280"] = SizeCategory.B, ["F2TH"] = SizeCategory.B,
+        ["FA8X"] = SizeCategory.C, ["GLEX"] = SizeCategory.C, ["GL7T"] = SizeCategory.C,
+        ["PC24"] = SizeCategory.B, ["LJ45"] = SizeCategory.A, ["H25B"] = SizeCategory.B,
+        ["TBM8"] = SizeCategory.A, ["TBM9"] = SizeCategory.A, ["TBM7"] = SizeCategory.A,
 
         // C - narrowbody, il grosso del traffico
         ["A19N"] = SizeCategory.C, ["A20N"] = SizeCategory.C, ["A21N"] = SizeCategory.C,
@@ -88,7 +93,12 @@ public static class AircraftCatalog
         ["C25A"] = new(15.16, 14.38), ["C25B"] = new(16.26, 15.45), ["C56X"] = new(16.97, 14.91),
         ["CL60"] = new(19.61, 20.85), ["GLF4"] = new(23.72, 26.92), ["GLF5"] = new(28.50, 29.40),
         ["GLF6"] = new(28.50, 30.40), ["FA7X"] = new(26.21, 23.38), ["E50P"] = new(12.47, 12.82),
-        ["E55P"] = new(14.35, 14.21),
+        ["E55P"] = new(14.35, 14.21), ["C68A"] = new(22.05, 18.97), ["C700"] = new(20.93, 22.30),
+        ["CL35"] = new(21.00, 20.90), ["CL30"] = new(19.46, 20.92), ["G280"] = new(19.20, 20.30),
+        ["F2TH"] = new(21.38, 20.23), ["FA8X"] = new(26.29, 24.46), ["GLEX"] = new(28.65, 30.30),
+        ["GL7T"] = new(31.70, 33.80), ["PC24"] = new(17.00, 16.85), ["LJ45"] = new(14.58, 17.68),
+        ["H25B"] = new(15.66, 15.60), ["TBM8"] = new(12.83, 10.64), ["TBM9"] = new(12.83, 10.74),
+        ["TBM7"] = new(12.68, 10.64),
 
         // Regionali
         ["AT43"] = new(24.57, 22.67), ["AT45"] = new(24.57, 22.67), ["AT72"] = new(27.05, 27.17),
@@ -150,6 +160,44 @@ public static class AircraftCatalog
 
     /// <summary>True se il tipo è aviazione generale (categoria A e non di linea).</summary>
     public static bool IsGeneralAviation(string? icaoType) => SizeOf(icaoType) == SizeCategory.A;
+
+    /// <summary>Business jet e turboelica executive: vanno sugli stand dei jet privati.</summary>
+    private static readonly HashSet<string> BusinessTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "C25A", "C25B", "C25C", "C510", "C525", "C550", "C560", "C56X", "C650", "C680", "C68A",
+        "C700", "C750", "CL30", "CL35", "CL60", "GL5T", "GL7T", "GLEX", "GLF4", "GLF5", "GLF6",
+        "G280", "FA50", "FA7X", "FA8X", "F2TH", "F900", "E50P", "E55P", "E545", "E550",
+        "LJ35", "LJ45", "LJ60", "LJ75", "H25B", "BE40", "PRM1", "HDJT", "PC12", "PC24",
+        "TBM7", "TBM8", "TBM9", "P180", "BE20", "BE9L",
+    };
+
+    /// <summary>
+    /// Jet privato o aviazione generale. Lo riconosciamo dal tipo, oppure dal callsign quando
+    /// è una marca e non un volo di compagnia: "N900FZ", "IABCD", "D-IABC".
+    /// </summary>
+    public static bool IsBusinessOrGa(string? icaoType, string? callsign) =>
+        IsGeneralAviation(icaoType)
+        || (!string.IsNullOrWhiteSpace(icaoType) && BusinessTypes.Contains(icaoType.Trim()))
+        || LooksLikeRegistration(callsign);
+
+    /// <summary>
+    /// Un callsign che è una marca. I voli di linea hanno un prefisso di compagnia seguito da
+    /// cifre (AZA1234, RYR54TG); le marche no: tutte lettere (IABCD), col trattino (D-IABC)
+    /// o nel formato americano N seguito da cifre (N900FZ).
+    /// </summary>
+    public static bool LooksLikeRegistration(string? callsign)
+    {
+        if (string.IsNullOrWhiteSpace(callsign)) return false;
+        var cs = callsign.Trim().ToUpperInvariant();
+
+        if (cs.Contains('-')) return true;
+        if (cs.Length is >= 4 and <= 6 && cs.All(char.IsLetter)) return true;
+        return cs.Length is >= 3 and <= 6 && cs[0] == 'N' && char.IsDigit(cs[1]);
+    }
+
+    /// <summary>Widebody o comunque più grande di un narrowbody: oltre i 36 m di apertura.</summary>
+    public static bool IsLarge(SizeCategory size, double? wingspanM) =>
+        wingspanM is { } w ? w > 36.5 : size >= SizeCategory.D;
 
     /// <summary>Il prefisso compagnia ICAO di 3 lettere, se il callsign ce l'ha.</summary>
     public static string? AirlineOf(string? callsign)

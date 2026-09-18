@@ -132,7 +132,7 @@ public static class RotationBuilder
             : outbound?.AircraftType ?? "";
 
         var use = AircraftCatalog.IsLikelyCargoType(type) ? "cargo"
-                : AircraftCatalog.IsGeneralAviation(type) ? "ga"
+                : AircraftCatalog.IsBusinessOrGa(type, primary.Callsign) ? "ga"
                 : "pax";
 
         var dims = AircraftCatalog.DimensionsOf(type);

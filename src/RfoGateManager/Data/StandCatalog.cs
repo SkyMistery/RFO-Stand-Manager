@@ -21,6 +21,9 @@ public sealed class StandOverride
     /// <summary>Piazzale di appartenenza, solo informativo.</summary>
     public int? Apron { get; set; }
 
+    /// <summary>A chi va di solito: "large" (widebody) o "ga" (jet privati).</summary>
+    public List<string>? ReservedFor { get; set; }
+
     public bool? Contact { get; set; }
     public List<string>? Uses { get; set; }
     public List<string>? Airlines { get; set; }
@@ -158,6 +161,7 @@ public static class StandCatalog
                 MaxWingspanM = s.MaxWingspanM,
                 MaxLengthM = s.MaxLengthM,
                 Apron = s.Apron,
+                ReservedFor = s.ReservedFor.ToList(),
                 Contact = s.Contact,
                 Uses = s.Uses.ToList(),
                 Airlines = s.Airlines.ToList(),
@@ -217,6 +221,7 @@ public static class StandCatalog
             MaxWingspanM = o.MaxWingspanM,
             MaxLengthM = o.MaxLengthM,
             Apron = o.Apron,
+            ReservedFor = o.ReservedFor ?? [],
             Contact = o.Contact ?? false,
             Uses = o.Uses ?? [],
             Airlines = o.Airlines ?? [],

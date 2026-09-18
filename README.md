@@ -159,14 +159,21 @@ cima al piano, nell'elenco *Ultimi cambi di stand*, e con un avviso.
 
 ### Ordine di comodità e stand suggeriti
 
-Il campo `priority` di `stands.LIRN.json` è l'ordine di comodità: prima gli stand 10-23, poi
-51-57, poi 41-46 (tutti apron 1), poi l'apron 2, poi l'apron 3. Un gruppo si riempie prima di
-passare al successivo; dentro il gruppo vince lo stand che spreca meno spazio, così l'11 e il 21
-(61 m) sono gli ultimi del loro gruppo per un A320. Per cambiare l'ordine basta cambiare i
-numeri nel file.
+Il campo `priority` di `stands.LIRN.json` è l'ordine di comodità: prima gli stand **10-20**, poi
+**51-57**, poi **41-46** (tutti apron 1), poi l'**apron 2**, poi l'**apron 3**. Un gruppo si riempie
+prima di passare al successivo; dentro il gruppo vince lo stand che spreca meno spazio. Per
+cambiare l'ordine basta cambiare i numeri nel file.
 
-Il gruppo comanda sullo spazio sprecato: se nel primo gruppo è libero solo l'11, un A320 va lì
-prima che in un 55 su misura. Sul booking vero succede a EJU14MA alle 08:35.
+Alcuni stand vanno di solito a un certo traffico (`reservedFor`). Non è un divieto: chi non
+corrisponde li usa solo quando è pieno tutto il resto, apron 3 compreso.
+
+- **22 e 23: jet privati.** Un business jet ci va prima di qualsiasi altro stand. Si riconosce
+  dal tipo (Citation, Challenger, Gulfstream, Falcon, Phenom, PC-12, TBM...) o dal callsign
+  quando è una marca e non un volo di compagnia (`N900FZ`, `IABCD`, `D-IABC`).
+- **11, 21, 44, 52: gli unici da 61 m, per gli aerei grandi.** I narrowbody li lasciano liberi:
+  nel booking vero EJU14MA, un A320 senza stand, prima finiva sull'11 e ora sul 56. Fra gli aerei
+  grandi resta il solito ordine, e lo stand riservato vince solo a parità di tutto il resto: un
+  787 va sul 21 prima che sull'11, ma un 757 (38 m) resta sul 13 invece di prendere un 61 m.
 
 Quando assegni, **Stand ▾** sulla riga apre gli stand adatti a quell'aereo, liberi, nello
 stesso ordine in cui li sceglierebbe il programma, con lo stand attuale evidenziato e gli

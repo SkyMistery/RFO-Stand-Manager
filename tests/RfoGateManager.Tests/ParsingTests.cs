@@ -150,6 +150,19 @@ public class AircraftCatalogTests
         => Assert.Equal(SizeCategory.C, AircraftCatalog.SizeOf("XXXX"));
 
     [Theory]
+    [InlineData("C56X", "AZA1234", true)]     // Citation Excel: jet privato dal tipo
+    [InlineData("C700", "AHS801D", true)]     // Citation Longitude di un operatore executive
+    [InlineData("A320", "N900FZ", true)]      // marca americana
+    [InlineData("A320", "IABCD", true)]       // marca italiana senza trattino
+    [InlineData("A320", "D-IABC", true)]      // marca col trattino
+    [InlineData("C172", "AZA1", true)]        // aviazione generale dal tipo
+    [InlineData("A320", "AZA1234", false)]
+    [InlineData("B738", "RYR54TG", false)]
+    [InlineData("A388", "LGX17V", false)]
+    public void Riconosce_i_jet_privati_dal_tipo_o_dalla_marca(string type, string callsign, bool expected)
+        => Assert.Equal(expected, AircraftCatalog.IsBusinessOrGa(type, callsign));
+
+    [Theory]
     [InlineData("AZA1234", "AZA")]
     [InlineData("RYR54TG", "RYR")]
     [InlineData("I-ABCD", null)]

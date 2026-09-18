@@ -50,6 +50,13 @@ public sealed record Stand
 
     public int? Apron { get; init; }
 
+    /// <summary>
+    /// A chi va di solito questo stand: "large" (widebody), "ga" (jet privati). Non è un
+    /// divieto: chi corrisponde lo preferisce a qualsiasi altro stand, gli altri lo usano solo
+    /// quando è pieno tutto il resto, apron 3 compreso.
+    /// </summary>
+    public IReadOnlyList<string> ReservedFor { get; init; } = [];
+
     /// <summary>Stand escluso dall'allocazione automatica (lavori, chiuso, riservato).</summary>
     public bool Disabled { get; init; }
 

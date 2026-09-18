@@ -30,7 +30,10 @@
       "blocks": [],
       "priority": 100,
       "disabled": false,
-      "note": "Apron 1"
+      "note": "Apron 1",
+      "reservedFor": [
+        "large"
+      ]
     },
     {
       "id": "12",
@@ -170,7 +173,10 @@
       "blocks": [],
       "priority": 100,
       "disabled": false,
-      "note": "Apron 1"
+      "note": "Apron 1",
+      "reservedFor": [
+        "large"
+      ]
     },
     {
       "id": "22",
@@ -184,7 +190,10 @@
       "blocks": [],
       "priority": 100,
       "disabled": false,
-      "note": "Apron 1"
+      "note": "Apron 1",
+      "reservedFor": [
+        "ga"
+      ]
     },
     {
       "id": "23",
@@ -198,7 +207,10 @@
       "blocks": [],
       "priority": 100,
       "disabled": false,
-      "note": "Apron 1"
+      "note": "Apron 1",
+      "reservedFor": [
+        "ga"
+      ]
     },
     {
       "id": "41",
@@ -254,7 +266,10 @@
       "blocks": [],
       "priority": 300,
       "disabled": false,
-      "note": "Apron 1, auto-manovrante (no push back)"
+      "note": "Apron 1, auto-manovrante (no push back)",
+      "reservedFor": [
+        "large"
+      ]
     },
     {
       "id": "45",
@@ -310,7 +325,10 @@
       "blocks": [],
       "priority": 200,
       "disabled": false,
-      "note": "Apron 1"
+      "note": "Apron 1",
+      "reservedFor": [
+        "large"
+      ]
     },
     {
       "id": "53",
@@ -537,5 +555,5 @@
       "note": "Apron 3"
     }
   ],
-  "_ordineComodita": "priority: piu' basso = piu' comodo. 100 = stand 10-23, 200 = 51-57, 300 = 41-46 (apron 1), 400 = apron 2, 500 = apron 3. Un gruppo si riempie prima di passare al successivo; dentro il gruppo vince lo stand che spreca meno spazio."
+  "_ordineComodita": "priority: piu' basso = piu' comodo. 100 = stand 10-20, 200 = 51-57, 300 = 41-46 (apron 1), 400 = apron 2, 500 = apron 3. Un gruppo si riempie prima di passare al successivo; dentro il gruppo vince lo stand che spreca meno spazio. reservedFor 'large': 11, 21, 44, 52 (61 m), i narrowbody li usano solo quando e' pieno anche l'apron 3. reservedFor 'ga': 22 e 23, i jet privati li preferiscono a tutto."
 }

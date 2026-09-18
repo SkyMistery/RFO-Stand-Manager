@@ -323,6 +323,25 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
 
         score += stand.Priority * 10.0;
 
+        // Stand riservati di solito a un tipo di traffico: chi non corrisponde li usa solo dopo
+        // l'apron 3. Chi corrisponde: i jet privati li preferiscono a qualsiasi altro stand; gli
+        // aerei grandi invece seguono il solito ordine, e lo stand riservato vince solo a parità
+        // di tutto il resto (un punto, meno di un metro di spazio sprecato). Altrimenti un 757,
+        // che sta benissimo sul 13, occuperebbe uno stand da 61 m.
+        if (stand.ReservedFor.Count > 0)
+        {
+            if (stand.ReservedFor.Any(r => Matches(r, req)))
+            {
+                score -= stand.ReservedFor.Any(r => r.Equals("ga", StringComparison.OrdinalIgnoreCase)) ? 20_000 : 1;
+                why.Add($"stand {Describe(stand.ReservedFor)}");
+            }
+            else
+            {
+                score += 10_000;
+                why.Add($"di solito {Describe(stand.ReservedFor)}, usato perché il resto è pieno");
+            }
+        }
+
         // Non sprecare uno stand grande su un aereo piccolo. In metri se li conosciamo,
         // altrimenti a salti di categoria.
         if (stand.MaxWingspanM is { } maxSpan && req.WingspanM is { } span)
@@ -354,6 +373,23 @@ public sealed class StandAllocator(IReadOnlyList<Stand> stands, AllocationOption
             : $"Stand {stand.Id}: primo compatibile e libero nella finestra.";
         return (score, text);
     }
+
+    private static bool Matches(string reservation, StandRequest req) => reservation.ToLowerInvariant() switch
+    {
+        "large" or "widebody" => AircraftCatalog.IsLarge(req.Size, req.WingspanM),
+        "ga" or "private" => req.Use == "ga",
+        "cargo" => req.Use == "cargo",
+        _ => false,
+    };
+
+    private static string Describe(IReadOnlyList<string> reservedFor) =>
+        string.Join(" e ", reservedFor.Select(r => r.ToLowerInvariant() switch
+        {
+            "large" or "widebody" => "per gli aerei grandi",
+            "ga" or "private" => "per i jet privati",
+            "cargo" => "per i cargo",
+            _ => $"per {r}",
+        }));
 
     /// <summary>
     /// Gli stand possibili per un volo, dal più comodo, guardando il piano così com'è adesso

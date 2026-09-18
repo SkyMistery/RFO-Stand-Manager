@@ -61,6 +61,7 @@ public static class Occupancy
                 Callsign = occ.Callsign.ToUpperInvariant(),
                 AircraftType = type,
                 Size = AircraftCatalog.SizeOf(type),
+                Use = AircraftCatalog.IsBusinessOrGa(type, occ.Callsign) ? "ga" : "pax",
                 WingspanM = dims?.WingspanM,
                 LengthM = dims?.LengthM,
                 // Non sappiamo quando se ne andrà: lo teniamo per una finestra che scorre con
